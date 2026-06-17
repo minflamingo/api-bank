@@ -769,6 +769,8 @@ class PayinController extends Controller
         $baseLimit = ApiPackage::userBaseLimit($user);
         $extraSlots = ApiPackage::userExtraSlots($user);
         $currentPlan = ApiPackage::plan((string) ($user->api_plan ?? ''));
+        $isCustomPlan = ApiPackage::isCustomPlan($user);
+        $currentPlanName = ApiPackage::currentPlanName($user);
         $nextPlan = ApiPackage::plan((string) ($user->api_next_plan ?? ''));
         $nextPlanMonths = (int) ($user->api_next_plan_months ?? 0);
         $nextPlanPrice = (int) ($user->api_next_plan_price ?? 0);
@@ -780,6 +782,8 @@ class PayinController extends Controller
             'baseLimit',
             'extraSlots',
             'currentPlan',
+            'isCustomPlan',
+            'currentPlanName',
             'nextPlan',
             'nextPlanMonths',
             'nextPlanPrice'

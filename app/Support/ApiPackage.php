@@ -61,6 +61,29 @@ class ApiPackage
         return $plan['durations'][$months] ?? null;
     }
 
+    public static function isCustomPlan(?User $user): bool
+    {
+        if (!$user || (int) ($user->time_end ?? 0) <= time()) {
+            return false;
+        }
+
+        if ((int) ($user->api_account_limit ?? 0) <= 0) {
+            return false;
+        }
+
+        return self::plan((string) ($user->api_plan ?? '')) === null;
+    }
+
+    public static function currentPlanName(?User $user): string
+    {
+        $plan = self::plan((string) ($user->api_plan ?? ''));
+        if ($plan) {
+            return (string) $plan['name'];
+        }
+
+        return self::isCustomPlan($user) ? 'Gói tùy chỉnh' : 'Chưa chọn gói';
+    }
+
     public static function userBaseLimit(?User $user): int
     {
         $user = self::applyDueScheduledPlan($user) ?: $user;

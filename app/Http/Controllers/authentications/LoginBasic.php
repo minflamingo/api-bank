@@ -109,14 +109,6 @@ class LoginBasic extends Controller
                 ])->save();
             }
 
-            DB::table('xlogs')->insert([
-                'ip' => $request->ip(),
-                'user' => $user->id,
-                'log' => $action,
-                'notes' => substr((string) $request->userAgent(), 0, 500),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
         } catch (\Throwable $e) {
             report($e);
         }

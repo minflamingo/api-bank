@@ -6,7 +6,8 @@
 @php
     $money = fn ($value) => number_format((int) $value) . ' đ';
     $currentPlanKey = trim((string) ($user->api_plan ?? ''));
-    $currentPlanName = $currentPlan['name'] ?? 'Chưa chọn gói';
+    $currentPlanName = $currentPlanName ?? ($currentPlan['name'] ?? 'Chưa chọn gói');
+    $isCustomPlan = (bool) ($isCustomPlan ?? false);
     $timeEnd = (int) ($user->time_end ?? 0);
     $nextPlanName = $nextPlan['name'] ?? '';
     $nextDurationLabel = (int) $nextPlanMonths > 0
@@ -41,6 +42,7 @@
   }
   .upgrade-page .status-label { color: #6b7280; font-size: 13px; margin-bottom: 5px; }
   .upgrade-page .status-value { font-weight: 800; font-size: 16px; }
+  .upgrade-page .status-note { color: #6b7280; font-size: 12px; margin-top: 5px; line-height: 1.35; }
   .upgrade-page .notice {
     border-radius: 8px;
     background: #dc2626;
@@ -231,6 +233,9 @@
     <div class="status-item">
       <div class="status-label">Gói hiện tại</div>
       <div class="status-value">{{ $currentPlanName }}</div>
+      @if($isCustomPlan)
+        <div class="status-note">Giữ {{ number_format($baseLimit) }} tài khoản đến khi hết hạn.</div>
+      @endif
     </div>
     <div class="status-item">
       <div class="status-label">Giới hạn tài khoản</div>
@@ -241,6 +246,12 @@
   @if($nextPlanName)
     <div class="alert alert-info border mb-3">
       <b>Gói kỳ sau:</b> {{ $nextPlanSummary }}. Gói này sẽ tự kích hoạt khi gói hiện tại hết hạn và ví đủ số dư.
+    </div>
+  @endif
+
+  @if($isCustomPlan)
+    <div class="alert alert-warning border mb-3">
+      <b>Gói tùy chỉnh:</b> Hệ thống giữ nguyên hạn API và số tài khoản ngân hàng hiện tại đến khi hết hạn.
     </div>
   @endif
 

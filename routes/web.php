@@ -50,7 +50,7 @@ Route::get('/v1/techcombank/transhistory/{token}', [PaymentController::class, 't
 // **Route mới**: Lấy giao dịch MBBank (api)
 Route::get('/v1/mbbank/transhistory/{token}', [PaymentController::class, 'mbbankGetTransHistoryAPI'])->name('v1.mbbank.transhistory');
 
-// API Bank v2.0 aliases after moving the current API service to apibank.com.vn.
+// API Bank v2.0 aliases: current app.pro.vn API after moving to apibank.com.vn.
 Route::get('/v2/vcb/balance/{token}', [PaymentController::class, 'vcbGetBalanceAPI'])->name('v2.vcb.balance');
 Route::get('/v2/acb/balance/{token}', [PaymentController::class, 'acbGetBalanceAPI'])->name('v2.acb.balance');
 Route::get('/v2/vpbank/balance/{token}', [PaymentController::class, 'vpbankGetBalanceAPI'])->name('v2.vpbank.balance');
@@ -130,6 +130,10 @@ Route::get('/auth/resend-verification', [\App\Http\Controllers\NeedActivateContr
      ->name('resend.verification')
      ->middleware('auth');
 
+Route::post('/admin/impersonate/stop', [SuperAdminController::class, 'stopImpersonating'])
+     ->name('admin.impersonate.stop')
+     ->middleware('auth');
+
 // ----------------------------------------------------------------------
 // Admin routes => middleware(['auth','checkRole:1'])
 // ----------------------------------------------------------------------
@@ -149,6 +153,9 @@ Route::middleware(['auth','checkRole:1,2,3'])->group(function () {
         Route::get('/admin', [SuperAdminController::class, 'index'])->name('admin.dashboard');
         Route::get('/admin/dashboard', [SuperAdminController::class, 'index'])->name('admin.dashboard.index');
         Route::get('/admin/users', [SuperAdminController::class, 'users'])->name('admin.users');
+        Route::post('/admin/users/{user}/impersonate', [SuperAdminController::class, 'impersonate'])
+            ->where(['user' => '[0-9]+'])
+            ->name('admin.users.impersonate');
         Route::get('/admin/sessions', [SuperAdminController::class, 'sessions'])->name('admin.sessions');
         Route::get('/admin/recharges', [SuperAdminController::class, 'recharges'])->name('admin.recharges');
         Route::get('/admin/logs', [SuperAdminController::class, 'logs'])->name('admin.logs');

@@ -234,7 +234,7 @@
       let elements = document.querySelectorAll('.money-vietcombank');
       elements.forEach(el => {
         let token = el.dataset.token;
-        let apiUrl = "/v1/vcb/balance/" + token; // route GET API
+        let apiUrl = "/v2/vcb/balance/" + token; // route GET API
 
         fetch(apiUrl)
           .then(response => response.json())

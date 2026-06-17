@@ -12,12 +12,12 @@ namespace App\Helpers;
 
 
 // get from main-es2015...js file
-define("defaultPublicKey", getenv('VCB_DEFAULT_PUBLIC_KEY') ?: "");
-define("clientPublicKey", getenv('VCB_CLIENT_PUBLIC_KEY') ?: "");
-define("clientPrivateKey", str_replace('\n', "\n", getenv('VCB_CLIENT_PRIVATE_KEY') ?: ""));
+define("defaultPublicKey", "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0K... (đã cắt bớt cho gọn)...LS0tLS1FTkQgUFVCTElDIEtFWS0tLS0t");
+define("clientPublicKey", "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQ... (đoạn chuỗi RSA) ...IDAQAB");
+define("clientPrivateKey", "-----BEGIN RSA PRIVATE KEY-----\r\nMII... (đoạn chuỗi) ...\r\n-----END RSA PRIVATE KEY-----\r\n");
 
 // Keycaptcha
-define("CAPTCHA_KEY", getenv('VCB_CAPTCHA_API_KEY') ?: "");
+define("CAPTCHA_KEY", "fd1a7cc1e92a8338a0ac3743c316624d");
 
 // Các hàm encodeRSA, decodeRSA, encryptAES, decryptAES, decryptResponse, encryptKey, encryptRequest
 // (giữ nguyên y hệt)

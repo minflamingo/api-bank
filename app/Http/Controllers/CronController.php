@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Invoice;
 use App\Models\Bank;
+use App\Support\BankTransactionRecorder;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
@@ -60,6 +61,8 @@ class CronController extends Controller
         if(!isset($result['data']) || !is_array($result['data'])){
             return "Không tìm thấy data ACB";
         }
+
+        $this->storeBankTransactions('acb', (int) $apiAccount->id, $apiAccount->user_id === null ? null : (int) $apiAccount->user_id, (string) $apiAccount->stk, $result['data']);
 
         foreach($result['data'] as $data)
         {
@@ -560,6 +563,16 @@ class CronController extends Controller
         }
 
         return "OK - Quét MBBank xong";
+    }
+
+
+    private function storeBankTransactions(string $bank, ?int $accountId, ?int $userId, string $accountNo, array $transactions): void
+    {
+        try {
+            app(BankTransactionRecorder::class)->save($bank, $accountId, $userId, $accountNo, $transactions);
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     // -------------------------------------------------------

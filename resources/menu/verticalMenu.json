@@ -1,18 +1,13 @@
 {
   "menu": [
     {
+      "menuHeader": "Chính"
+    },
+    {
       "url": "/",
       "name": "Tổng quan",
       "icon": "menu-icon tf-icons bx bx-home",
       "slug": "v2"
-    },
-    {
-      "url": "/admin",
-      "name": "Khu Super Admin",
-      "icon": "menu-icon tf-icons bx bx-shield-quarter",
-      "slug": "admin.dashboard",
-      "roles": [1],
-      "target": ""
     },
     {
       "url": "/bank-accounts",
@@ -22,26 +17,39 @@
       "target": ""
     },
     {
+      "url": "/docs",
+      "icon": "menu-icon tf-icons bx bx-file",
+      "name": "Tài liệu API",
+      "slug": "pages-docs",
+      "target": ""
+    },
+    {
+      "menuHeader": "Thanh toán"
+    },
+    {
       "url": "/client/payin",
-      "name": "Nạp Tiền",
-      "icon": "menu-icon tf-icons bx bx-money",
+      "name": "Nạp tiền",
+      "icon": "menu-icon tf-icons bx bx-wallet",
       "slug": "client.payin"
     },
     {
       "url": "/client/upgrade",
-      "name": "Gia Hạn API",
+      "name": "Gia hạn API",
       "icon": "menu-icon tf-icons bx bx-time-five",
       "slug": "client.upgrade"
     },
     {
-      "name": "Tài khoản",
+      "menuHeader": "Cá nhân"
+    },
+    {
+      "name": "Tài khoản cá nhân",
       "icon": "menu-icon tf-icons bx bx-user",
-      "slug": "pages",
+      "slug": "pages-account-settings",
       "submenu": [
         {
-          "url": "pages/account-settings-account",
-          "name": "Thông tin tài khoản",
-          "icon": "menu-icon tf-icons bx bx bx-detail",
+          "url": "/pages/account-settings-account",
+          "name": "Thông tin",
+          "icon": "menu-icon tf-icons bx bx-detail",
           "slug": "pages-account-settings-account",
           "target": ""
         },
@@ -55,28 +63,21 @@
         {
           "url": "/pages/account-settings-notifications",
           "name": "Thông báo",
-          "icon": "menu-icon tf-icons bx bx bx-bell",
+          "icon": "menu-icon tf-icons bx bx-bell",
           "slug": "pages-account-settings-notifications",
-          "target": ""
-        },
-        {
-          "url": "/pages/account-settings-connections",
-          "name": "Kết nối API",
-          "icon": "menu-icon tf-icons bx bx-link-alt",
-          "slug": "pages-account-settings-connections",
           "target": ""
         },
         {
           "url": "/logout",
           "name": "Đăng xuất",
-          "icon": "menu-icon tf-icons bx bx bx-power-off",
+          "icon": "menu-icon tf-icons bx bx-power-off",
           "slug": "logout",
           "target": ""
         }
       ]
     },
     {
-      "menuHeader": "Thông tin"
+      "menuHeader": "Hỗ trợ"
     },
     {
       "url": "/support",
@@ -86,10 +87,13 @@
       "target": ""
     },
     {
-      "url": "/docs",
-      "icon": "menu-icon tf-icons bx bx-file",
-      "name": "Tài liệu API",
-      "slug": "pages-docs",
+      "url": "/admin",
+      "name": "Super Admin",
+      "icon": "menu-icon tf-icons bx bx-shield-quarter",
+      "slug": "admin.dashboard",
+      "roles": [
+        1
+      ],
       "target": ""
     }
   ]

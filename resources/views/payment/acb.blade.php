@@ -128,7 +128,7 @@ document.addEventListener("DOMContentLoaded", function(){
       let row = el.closest('tr');
       let typeTd = row.querySelector('.type-acb[data-token="'+ token +'"]');
 
-      let apiUrl = "/v1/acb/balance/" + token;
+      let apiUrl = "/v2/acb/balance/" + token;
       fetch(apiUrl)
         .then(res => res.json())
         .then(data => {

@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class SuperAdminController extends Controller
@@ -30,6 +32,84 @@ class SuperAdminController extends Controller
     public function logs(Request $request)
     {
         return $this->dashboard($request, 'logs');
+    }
+
+
+    public function impersonate(Request $request, int $user)
+    {
+        $admin = Auth::user();
+        abort_unless($admin && (int) $admin->role === 1, 403);
+
+        if ($request->session()->has('impersonator_id')) {
+            return redirect()
+                ->route('admin.users')
+                ->with('warning', 'Bạn đang ở chế độ vào vai. Hãy quay lại admin trước khi vào vai user khác.');
+        }
+
+        $target = User::query()->findOrFail($user);
+        if ((int) $target->id === (int) $admin->id) {
+            return redirect()
+                ->route('admin.users')
+                ->with('warning', 'Không cần vào vai chính tài khoản đang dùng.');
+        }
+
+        $targetLabel = $target->display_name ?: $target->name ?: $target->email ?: ('User #' . $target->id);
+        $adminLabel = $admin->display_name ?: $admin->name ?: $admin->email ?: ('Admin #' . $admin->id);
+
+        $request->session()->put('impersonator_id', (int) $admin->id);
+        $request->session()->put('impersonator_name', $adminLabel);
+        $request->session()->put('impersonated_user_id', (int) $target->id);
+        $request->session()->put('impersonated_user_name', $targetLabel);
+
+        $this->writeImpersonationLog(
+            $request,
+            (int) $admin->id,
+            'Bắt đầu vào vai user',
+            sprintf('Admin #%d (%s) vào vai user #%d (%s).', $admin->id, $adminLabel, $target->id, $targetLabel)
+        );
+
+        Auth::loginUsingId($target->id);
+        $request->session()->regenerate();
+
+        return redirect()
+            ->route('v2')
+            ->with('success', 'Đang đăng nhập dưới dạng ' . $targetLabel . '.');
+    }
+
+    public function stopImpersonating(Request $request)
+    {
+        $adminId = (int) $request->session()->get('impersonator_id', 0);
+        if ($adminId <= 0) {
+            return redirect()->route('v2')->with('info', 'Không có phiên vào vai nào đang chạy.');
+        }
+
+        $admin = User::query()->find($adminId);
+        abort_unless($admin && (int) $admin->role === 1, 403);
+
+        $current = Auth::user();
+        $targetId = (int) ($request->session()->get('impersonated_user_id') ?: ($current->id ?? 0));
+        $targetLabel = (string) ($request->session()->get('impersonated_user_name') ?: ($current->email ?? ('User #' . $targetId)));
+        $adminLabel = $admin->display_name ?: $admin->name ?: $admin->email ?: ('Admin #' . $admin->id);
+
+        $this->writeImpersonationLog(
+            $request,
+            (int) $admin->id,
+            'Kết thúc vào vai user',
+            sprintf('Admin #%d (%s) quay lại từ user #%d (%s).', $admin->id, $adminLabel, $targetId, $targetLabel)
+        );
+
+        Auth::loginUsingId($admin->id);
+        $request->session()->forget([
+            'impersonator_id',
+            'impersonator_name',
+            'impersonated_user_id',
+            'impersonated_user_name',
+        ]);
+        $request->session()->regenerate();
+
+        return redirect()
+            ->route('admin.users')
+            ->with('success', 'Đã quay lại tài khoản super admin.');
     }
 
     private function dashboard(Request $request, string $section)
@@ -186,6 +266,23 @@ class SuperAdminController extends Controller
             'stats',
             'users'
         ));
+    }
+
+
+    private function writeImpersonationLog(Request $request, int $actorId, string $action, string $notes): void
+    {
+        try {
+            DB::table('xlogs')->insert([
+                'ip' => $request->ip(),
+                'user' => $actorId,
+                'log' => $action,
+                'notes' => mb_substr($notes . ' IP: ' . $request->ip(), 0, 1000),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     private function tokenCount(string $table, string $column): int

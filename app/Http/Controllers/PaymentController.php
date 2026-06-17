@@ -13,6 +13,7 @@ use App\Models\AccountVpbank;
 use App\Models\AccountMbbank;
 use App\Models\AccountTechcombank;
 use App\Support\ApiPackage;
+use App\Support\BankTransactionRecorder;
 use Carbon\Carbon;         // nếu cần dùng xử lý thời gian
 
 /** THÊM 2 use DƯỚI ĐÂY CHO PHPSecLib v3 **/
@@ -419,6 +420,16 @@ class PaymentController extends Controller
         return trim($text, " \t\n\r\0\x0B-:;,.|/");
     }
 
+
+    private function storeBankTransactions(string $bank, ?int $accountId, ?int $userId, string $accountNo, array $transactions): void
+    {
+        try {
+            app(BankTransactionRecorder::class)->save($bank, $accountId, $userId, $accountNo, $transactions);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
     // -------------------------------------------------------------------------
     //  Hàm gọi API chung
     // -------------------------------------------------------------------------
@@ -513,6 +524,8 @@ class PaymentController extends Controller
             }
         }
 
+        $this->storeBankTransactions('vcb', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $arrLSGD['transactions'] ?? []);
+
         $transactions = $this->prepareBankHistoryTransactions($request, $arrLSGD['transactions'] ?? [], 'vcb', (string) $acc->account);
 
         return view('payment.vcbhistory', ['acc' => $acc] + $transactions);
@@ -523,16 +536,6 @@ class PaymentController extends Controller
     // -------------------------------------------------------------------------
     public function vcbGetBalanceAPI(Request $request, $token)
     {
-        // Chỉ ghi log sự kiện quan trọng
-        XLog::create([
-            'ip'         => $request->ip(),
-            'user'       => Auth::id() ?? 0,
-            'log'        => 'API Lấy số dư VCB',
-            'notes'      => "Token: $token",
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         $accountVcb = AccountVietcombank::where('token', $token)->first();
         if (!$accountVcb) {
             return response()->json([
@@ -646,14 +649,6 @@ class PaymentController extends Controller
         }
         $login = json_decode($loginJson, true);
 
-        XLog::create([
-            'ip'         => $request->ip(),
-            'user'       => Auth::id() ?? 0,
-            'log'        => 'VCB LOGIN OTP',
-            'notes'      => 'login='.$loginJson,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         if (isset($login['code']) && $login['code'] === '00') {
             // Ko cần OTP
@@ -745,14 +740,6 @@ class PaymentController extends Controller
     // -------------------------------------------------------------------------
     public function vcbLoginOTP(Request $request)
     {
-        XLog::create([
-            'ip'         => $request->ip(),
-            'user'       => Auth::id() ?? 0,
-            'log'        => 'VCB LOGIN OTP',
-            'notes'      => 'Xác thực OTP',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         $user = Auth::user();
         if (!$user) {
@@ -809,14 +796,6 @@ class PaymentController extends Controller
     // -------------------------------------------------------------------------
     public function vcbSendToken(Request $request)
     {
-        XLog::create([
-            'ip'         => $request->ip(),
-            'user'       => Auth::id() ?? 0,
-            'log'        => 'VCB SEND TOKEN',
-            'notes'      => 'Yêu cầu gửi token VCB',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         $user = Auth::user();
         if (!$user) {
@@ -835,18 +814,10 @@ class PaymentController extends Controller
 
         $tokenVCB = $row->token;
         // Gửi mail tuỳ ý, ví dụ
-        XLog::create([
-            'ip'   => $request->ip(),
-            'user' => $user->id,
-            'log'  => 'Gửi token VCB qua mail',
-            'notes'=> "Token: $tokenVCB",
-            'created_at'=> now(),
-            'updated_at'=> now(),
-        ]);
 
         return response()->json([
             'status'=>'2',
-            'msg'=>"Token VCB: {$tokenVCB}\nAPI số dư: " . url("/v1/vcb/balance/{$tokenVCB}") . "\nAPI giao dịch: " . url("/v1/vcb/transhistory/{$tokenVCB}")
+            'msg'=>"Token VCB: {$tokenVCB}\nAPI số dư: " . url("/v2/vcb/balance/{$tokenVCB}") . "\nAPI giao dịch: " . url("/v2/vcb/transhistory/{$tokenVCB}")
         ]);
     }
 
@@ -896,14 +867,6 @@ class PaymentController extends Controller
         }
 
         $sotien = 10000;
-        XLog::create([
-            'ip'         => $request->ip(),
-            'user'       => $user->id,
-            'log'        => 'Nạp tiền demo',
-            'notes'      => "Nạp $sotien",
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         Transaction::create([
             'transaction_date' => now(),
@@ -970,7 +933,7 @@ class PaymentController extends Controller
             }
         }
 
-        //$transactions = $arrLSGD['transactions'] ?? [];
+        $this->storeBankTransactions('vcb', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $arrLSGD['transactions'] ?? []);
 
         return response()->json($arrLSGD);
     }
@@ -999,6 +962,8 @@ class PaymentController extends Controller
                 return ['ok' => false, 'message' => 'Không thể lấy lịch sử VCB sau khi login lại'];
             }
         }
+
+        $this->storeBankTransactions('vcb', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $arrLSGD['transactions'] ?? []);
 
         return ['ok' => true, 'data' => $arrLSGD];
     }
@@ -1622,6 +1587,8 @@ class PaymentController extends Controller
 
         $acc->refresh();
 
+        $this->storeBankTransactions('vpbank', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $history['data']['transactions'] ?? []);
+
         $transactions = $this->prepareBankHistoryTransactions($request, $history['data']['transactions'] ?? [], 'vpbank', (string) $acc->account);
 
         return view('payment.vpbankhistory', ['acc' => $acc] + $transactions);
@@ -1653,7 +1620,7 @@ class PaymentController extends Controller
 
         return response()->json([
             'status' => '2',
-            'msg' => "Token VPBank: {$token}\nAPI số dư: " . url("/v1/vpbank/balance/{$token}") . "\nAPI giao dịch: " . url("/v1/vpbank/transhistory/{$token}")
+            'msg' => "Token VPBank: {$token}\nAPI số dư: " . url("/v2/vpbank/balance/{$token}") . "\nAPI giao dịch: " . url("/v2/vpbank/transhistory/{$token}")
         ]);
     }
 
@@ -1717,6 +1684,8 @@ class PaymentController extends Controller
             }
         }
 
+        $this->storeBankTransactions('vpbank', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $history['data']['transactions'] ?? []);
+
         return response()->json($history);
     }
 
@@ -1740,6 +1709,8 @@ class PaymentController extends Controller
         if ((int) ($history['code'] ?? 0) !== 200) {
             return ['ok' => false, 'message' => (string) ($history['message'] ?? 'Không thể lấy lịch sử VPBank sau khi login lại')];
         }
+
+        $this->storeBankTransactions('vpbank', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $history['data']['transactions'] ?? []);
 
         return ['ok' => true, 'data' => $history];
     }
@@ -2584,10 +2555,7 @@ class PaymentController extends Controller
             return $this->apiTokenExpiredResponse($user);
         }
 
-        $balance = $this->getBalanceMbbank($acc);
-        if ((int) ($balance['code'] ?? 0) !== 200 && $this->mbbankReLoginIfNeed($acc)) {
-            $balance = $this->getBalanceMbbank($acc->refresh());
-        }
+        $balance = $this->getBalanceMbbankWithSessionRetry($acc);
 
         if ((int) ($balance['code'] ?? 0) !== 200) {
             return response()->json([
@@ -2616,24 +2584,19 @@ class PaymentController extends Controller
             return redirect()->back()->with('error', 'Không tìm thấy tài khoản MBBank');
         }
 
-        $history = $this->getTransactionHistoryMbbank(
+        $history = $this->getTransactionHistoryMbbankWithSessionRetry(
             $acc,
             $request->query('from_date') ?: $request->query('fromDate'),
             $request->query('to_date') ?: $request->query('toDate')
         );
-        if ((int) ($history['code'] ?? 0) !== 200 && $this->mbbankReLoginIfNeed($acc)) {
-            $history = $this->getTransactionHistoryMbbank(
-                $acc->refresh(),
-                $request->query('from_date') ?: $request->query('fromDate'),
-                $request->query('to_date') ?: $request->query('toDate')
-            );
-        }
 
         if ((int) ($history['code'] ?? 0) !== 200) {
             return redirect()->back()->with('error', (string) ($history['message'] ?? 'Không thể lấy lịch sử MBBank'));
         }
 
         $acc->refresh();
+        $this->storeBankTransactions('mbbank', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $history['data']['transactions'] ?? []);
+
         $transactions = $this->prepareBankHistoryTransactions($request, $history['data']['transactions'] ?? [], 'mbbank', (string) $acc->account);
 
         return view('payment.mbbankhistory', ['acc' => $acc] + $transactions);
@@ -2665,7 +2628,7 @@ class PaymentController extends Controller
 
         return response()->json([
             'status' => '2',
-            'msg' => "Token MBBank: {$token}\nAPI số dư: " . url("/v1/mbbank/balance/{$token}") . "\nAPI giao dịch: " . url("/v1/mbbank/transhistory/{$token}"),
+            'msg' => "Token MBBank: {$token}\nAPI số dư: " . url("/v2/mbbank/balance/{$token}") . "\nAPI giao dịch: " . url("/v2/mbbank/transhistory/{$token}"),
         ]);
     }
 
@@ -2706,20 +2669,14 @@ class PaymentController extends Controller
             return $this->apiTokenExpiredResponse($user);
         }
 
-        $history = $this->getTransactionHistoryMbbank(
+        $history = $this->getTransactionHistoryMbbankWithSessionRetry(
             $acc,
             $request->query('from_date') ?: $request->query('fromDate'),
             $request->query('to_date') ?: $request->query('toDate'),
             min(500, max(20, (int) $request->query('limit', 100)))
         );
-        if ((int) ($history['code'] ?? 0) !== 200 && $this->mbbankReLoginIfNeed($acc)) {
-            $history = $this->getTransactionHistoryMbbank(
-                $acc->refresh(),
-                $request->query('from_date') ?: $request->query('fromDate'),
-                $request->query('to_date') ?: $request->query('toDate'),
-                min(500, max(20, (int) $request->query('limit', 100)))
-            );
-        }
+
+        $this->storeBankTransactions('mbbank', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $history['data']['transactions'] ?? []);
 
         return response()->json($history);
     }
@@ -2731,14 +2688,14 @@ class PaymentController extends Controller
             return ['ok' => false, 'message' => 'Không tìm thấy tài khoản MBBank nhận tiền'];
         }
 
-        $history = $this->getTransactionHistoryMbbank($acc, null, null, 100);
-        if ((int) ($history['code'] ?? 0) !== 200 && $this->mbbankReLoginIfNeed($acc)) {
-            $history = $this->getTransactionHistoryMbbank($acc->refresh(), null, null, 100);
-        }
+        $history = $this->getTransactionHistoryMbbankWithSessionRetry($acc, null, null, 100);
 
         if ((int) ($history['code'] ?? 0) !== 200) {
             return ['ok' => false, 'message' => (string) ($history['message'] ?? 'Không thể lấy lịch sử MBBank')];
         }
+
+        $acc->refresh();
+        $this->storeBankTransactions('mbbank', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $history['data']['transactions'] ?? []);
 
         return ['ok' => true, 'data' => $history];
     }
@@ -2954,20 +2911,76 @@ class PaymentController extends Controller
         ];
     }
 
+    private function getBalanceMbbankWithSessionRetry(AccountMbbank $acc): array
+    {
+        $balance = $this->getBalanceMbbank($acc);
+        if ((int) ($balance['code'] ?? 0) === 200) {
+            return $balance;
+        }
+
+        return $this->retryMbbankAfterLogin($acc, function (AccountMbbank $freshAcc) {
+            return $this->getBalanceMbbank($freshAcc);
+        }, $balance);
+    }
+
+    private function getTransactionHistoryMbbankWithSessionRetry(AccountMbbank $acc, ?string $fromDate = null, ?string $toDate = null, int $limit = 100): array
+    {
+        $history = $this->getTransactionHistoryMbbank($acc, $fromDate, $toDate, $limit);
+        if ((int) ($history['code'] ?? 0) === 200) {
+            return $history;
+        }
+
+        return $this->retryMbbankAfterLogin($acc, function (AccountMbbank $freshAcc) use ($fromDate, $toDate, $limit) {
+            return $this->getTransactionHistoryMbbank($freshAcc, $fromDate, $toDate, $limit);
+        }, $history);
+    }
+
+    private function retryMbbankAfterLogin(AccountMbbank $acc, callable $reader, array $fallback): array
+    {
+        $result = $fallback;
+
+        for ($loginAttempt = 0; $loginAttempt < 2; $loginAttempt++) {
+            if (!$this->mbbankReLoginIfNeed($acc)) {
+                break;
+            }
+
+            foreach ([800000, 1400000] as $delay) {
+                usleep($delay);
+                $result = $reader($acc->refresh());
+                if ((int) ($result['code'] ?? 0) === 200) {
+                    return $result;
+                }
+            }
+        }
+
+        return $result;
+    }
+
     private function mbbankReLoginIfNeed(AccountMbbank $acc): bool
     {
-        try {
-            $deviceId = $acc->device_id ?: $this->mbbankDeviceId();
-            $login = $this->mbbankLoginRequest((string) $acc->username, (string) $acc->password, (string) $deviceId);
-            if (!empty($login['success']) && !empty($login['session_id'])) {
-                $acc->session_id = (string) $login['session_id'];
-                $acc->device_id = (string) $deviceId;
-                $acc->create_date = now();
-                $acc->save();
-                return true;
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            try {
+                $deviceId = $attempt === 0 && !empty($acc->device_id)
+                    ? (string) $acc->device_id
+                    : $this->mbbankDeviceId();
+
+                if ($attempt > 0) {
+                    usleep(450000);
+                }
+
+                $login = $this->mbbankLoginRequest((string) $acc->username, (string) $acc->password, $deviceId);
+                if (!empty($login['success']) && !empty($login['session_id'])) {
+                    $acc->session_id = (string) $login['session_id'];
+                    $acc->device_id = $deviceId;
+                    $acc->create_date = now();
+                    $acc->save();
+
+                    usleep(250000);
+                    return true;
+                }
+            } catch (\Throwable $e) {
+                report($e);
             }
-        } catch (\Throwable $e) {
-            return false;
         }
 
         return false;
@@ -3035,6 +3048,7 @@ class PaymentController extends Controller
             'Cache-Control: no-cache',
             'Accept: application/json, text/plain, */*',
             'Accept-Language: vi,vi-VN;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Authorization: Basic RU1CUkVUQUlMV0VCOlNEMjM0ZGZnMzQlI0BGR0AzNHNmc2RmNDU4NDNm',
             'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
             'Origin: https://online.mbbank.com.vn',
             'Referer: ' . $referer,
@@ -3051,11 +3065,6 @@ class PaymentController extends Controller
             'elastic-apm-traceparent: 00-' . bin2hex(random_bytes(16)) . '-' . bin2hex(random_bytes(8)) . '-01',
             'priority: u=1, i',
         ];
-
-        $authorization = (string) config('services.mbbank.authorization', '');
-        if ($authorization !== '') {
-            $headers[] = 'Authorization: ' . $authorization;
-        }
 
         if ($deviceId !== '') {
             $headers[] = 'Deviceid: ' . $deviceId;
@@ -3326,6 +3335,8 @@ class PaymentController extends Controller
 
         $acc->refresh();
 
+        $this->storeBankTransactions('techcombank', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $history['data']['transactions'] ?? []);
+
         $transactions = $this->prepareBankHistoryTransactions($request, $history['data']['transactions'] ?? [], 'techcombank', (string) $acc->account);
 
         return view('payment.techcombankhistory', ['acc' => $acc] + $transactions);
@@ -3357,7 +3368,7 @@ class PaymentController extends Controller
 
         return response()->json([
             'status' => '2',
-            'msg' => "Token Techcombank: {$token}\nAPI số dư: " . url("/v1/techcombank/balance/{$token}") . "\nAPI giao dịch: " . url("/v1/techcombank/transhistory/{$token}"),
+            'msg' => "Token Techcombank: {$token}\nAPI số dư: " . url("/v2/techcombank/balance/{$token}") . "\nAPI giao dịch: " . url("/v2/techcombank/transhistory/{$token}"),
         ]);
     }
 
@@ -3413,6 +3424,8 @@ class PaymentController extends Controller
             );
         }
 
+        $this->storeBankTransactions('techcombank', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $history['data']['transactions'] ?? []);
+
         return response()->json($history);
     }
 
@@ -3431,6 +3444,8 @@ class PaymentController extends Controller
         if ((int) ($history['code'] ?? 0) !== 200) {
             return ['ok' => false, 'message' => (string) ($history['message'] ?? 'Không thể lấy lịch sử Techcombank')];
         }
+
+        $this->storeBankTransactions('techcombank', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->account, $history['data']['transactions'] ?? []);
 
         return ['ok' => true, 'data' => $history];
     }
@@ -4260,14 +4275,6 @@ class PaymentController extends Controller
         $balanceJson = $this->getBalanceAcb($acc->sessionId);
         $balanceArr  = json_decode($balanceJson, true);
 
-        XLog::create([
-            'ip'         => $request->ip(),
-            'user'       => Auth::id() ?? 0,
-            'log'        => 'ACB GET BALANCE',
-            'notes'      => $balanceJson,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         if (!isset($balanceArr['codeStatus']) || $balanceArr['codeStatus'] != 200) {
             // Thử re-login
@@ -4342,6 +4349,8 @@ class PaymentController extends Controller
             }
         }
 
+        $this->storeBankTransactions('acb', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->stk, $arrLSGD['data'] ?? []);
+
         $transactions = $this->prepareBankHistoryTransactions($request, $arrLSGD['data'] ?? [], 'acb', (string) $acc->stk);
 
         return view('payment.acbhistory', ['acc' => $acc] + $transactions);
@@ -4354,14 +4363,6 @@ class PaymentController extends Controller
             return response()->json(['status'=>'1','msg'=>'Chưa đăng nhập']);
         }
 
-        XLog::create([
-            'ip'         => $request->ip(),
-            'user'       => $user->id,
-            'log'        => 'ACB SEND TOKEN',
-            'notes'      => 'User yêu cầu token ACB',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         $id = $request->input('id');
         if (empty($id)) {
@@ -4374,18 +4375,10 @@ class PaymentController extends Controller
 
         $tokenAcb = $acc->token;
         // Gửi mail...
-        XLog::create([
-            'ip'         => $request->ip(),
-            'user'       => $user->id,
-            'log'        => 'Đã gửi token ACB qua email',
-            'notes'      => "Token: $tokenAcb",
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
 
         return response()->json([
             'status'=>'2',
-            'msg'=>"Token ACB: {$tokenAcb}\nAPI số dư: " . url("/v1/acb/balance/{$tokenAcb}") . "\nAPI giao dịch: " . url("/v1/acb/transhistory/{$tokenAcb}")
+            'msg'=>"Token ACB: {$tokenAcb}\nAPI số dư: " . url("/v2/acb/balance/{$tokenAcb}") . "\nAPI giao dịch: " . url("/v2/acb/transhistory/{$tokenAcb}")
         ]);
     }
 
@@ -4462,7 +4455,7 @@ class PaymentController extends Controller
             }
         }
 
-        //$transactions = $arrLSGD['data'] ?? [];
+        $this->storeBankTransactions('acb', (int) $acc->id, $acc->user_id === null ? null : (int) $acc->user_id, (string) $acc->stk, $arrLSGD['data'] ?? []);
 
         return response()->json($arrLSGD);
     }

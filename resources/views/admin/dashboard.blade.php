@@ -108,6 +108,15 @@
 @endphp
 
 <div class="super-admin-page">
+  @foreach(['success' => 'success', 'warning' => 'warning', 'error' => 'danger', 'info' => 'info'] as $flashKey => $flashClass)
+    @if(session($flashKey))
+      <div class="alert alert-{{ $flashClass }} alert-dismissible fade show" role="alert">
+        {{ session($flashKey) }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    @endif
+  @endforeach
+
   <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4">
     <div>
       <div class="text-muted small mb-1">Quản trị hệ thống</div>
@@ -187,6 +196,7 @@
               <th>Hạn API</th>
               <th>IP</th>
               <th>Ngày đăng ký</th>
+              <th>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -221,9 +231,21 @@
                 </td>
                 <td>{{ $row->ip ?: '-' }}</td>
                 <td>{{ $dateTime($row->created_at) }}</td>
+                <td>
+                  @if((int) $row->id === (int) auth()->id())
+                    <span class="badge bg-label-secondary">Đang dùng</span>
+                  @else
+                    <form method="POST" action="{{ route('admin.users.impersonate', $row->id) }}" class="mb-0" onsubmit="return confirm('Đăng nhập dưới dạng user #{{ $row->id }}?');">
+                      @csrf
+                      <button type="submit" class="btn btn-sm btn-outline-primary">
+                        <i class="bx bx-log-in-circle me-1"></i>Vào vai
+                      </button>
+                    </form>
+                  @endif
+                </td>
               </tr>
             @empty
-              <tr><td colspan="8" class="text-muted text-center py-4">Không có user phù hợp.</td></tr>
+              <tr><td colspan="9" class="text-muted text-center py-4">Không có user phù hợp.</td></tr>
             @endforelse
           </tbody>
         </table>

@@ -105,11 +105,11 @@
       <div class="card-body">
         <div class="mb-3">
           <div class="text-muted small">Lịch sử giao dịch</div>
-          <code>{{ url('/v1/acb/transhistory/{token}') }}</code>
+          <code>{{ url('/v2/acb/transhistory/{token}') }}</code>
         </div>
         <div class="mb-3">
           <div class="text-muted small">Số dư</div>
-          <code>{{ url('/v1/acb/balance/{token}') }}</code>
+          <code>{{ url('/v2/acb/balance/{token}') }}</code>
         </div>
         <a class="btn btn-outline-primary" href="{{ route('payment.acb.index') }}">Quản lý ACB</a>
       </div>
@@ -124,11 +124,11 @@
       <div class="card-body">
         <div class="mb-3">
           <div class="text-muted small">Lịch sử giao dịch</div>
-          <code>{{ url('/v1/vcb/transhistory/{token}') }}</code>
+          <code>{{ url('/v2/vcb/transhistory/{token}') }}</code>
         </div>
         <div class="mb-3">
           <div class="text-muted small">Số dư</div>
-          <code>{{ url('/v1/vcb/balance/{token}') }}</code>
+          <code>{{ url('/v2/vcb/balance/{token}') }}</code>
         </div>
         <a class="btn btn-outline-primary" href="{{ route('payment.vcb.index') }}">Quản lý Vietcombank</a>
       </div>
@@ -143,11 +143,11 @@
       <div class="card-body">
         <div class="mb-3">
           <div class="text-muted small">Lịch sử giao dịch</div>
-          <code>{{ url('/v1/vpbank/transhistory/{token}') }}</code>
+          <code>{{ url('/v2/vpbank/transhistory/{token}') }}</code>
         </div>
         <div class="mb-3">
           <div class="text-muted small">Số dư</div>
-          <code>{{ url('/v1/vpbank/balance/{token}') }}</code>
+          <code>{{ url('/v2/vpbank/balance/{token}') }}</code>
         </div>
         <a class="btn btn-outline-primary" href="{{ route('bank.accounts.create', ['bank' => 'vpbank']) }}">Quản lý VPBank</a>
       </div>
@@ -162,11 +162,11 @@
       <div class="card-body">
         <div class="mb-3">
           <div class="text-muted small">Lịch sử giao dịch</div>
-          <code>{{ url('/v1/techcombank/transhistory/{token}') }}</code>
+          <code>{{ url('/v2/techcombank/transhistory/{token}') }}</code>
         </div>
         <div class="mb-3">
           <div class="text-muted small">Số dư</div>
-          <code>{{ url('/v1/techcombank/balance/{token}') }}</code>
+          <code>{{ url('/v2/techcombank/balance/{token}') }}</code>
         </div>
         <a class="btn btn-outline-primary" href="{{ route('bank.accounts.create', ['bank' => 'techcombank']) }}">Quản lý Techcombank</a>
       </div>
@@ -181,11 +181,11 @@
       <div class="card-body">
         <div class="mb-3">
           <div class="text-muted small">Lịch sử giao dịch</div>
-          <code>{{ url('/v1/mbbank/transhistory/{token}') }}</code>
+          <code>{{ url('/v2/mbbank/transhistory/{token}') }}</code>
         </div>
         <div class="mb-3">
           <div class="text-muted small">Số dư</div>
-          <code>{{ url('/v1/mbbank/balance/{token}') }}</code>
+          <code>{{ url('/v2/mbbank/balance/{token}') }}</code>
         </div>
         <a class="btn btn-outline-primary" href="{{ route('bank.accounts.create', ['bank' => 'mbbank']) }}">Quản lý MBBank</a>
       </div>

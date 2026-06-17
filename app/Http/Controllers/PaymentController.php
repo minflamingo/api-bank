@@ -587,7 +587,11 @@ class PaymentController extends Controller
 
         return response()->json([
             'status' => 200,
-            'SoDu'   => $soDuNum
+            'SoDu'   => $soDuNum,
+            'account_number' => (string) $accountVcb->account,
+            'account_no' => (string) $accountVcb->account,
+            'accountNo' => (string) $accountVcb->account,
+            'accountDescription' => (string) ($accountVcb->name ?? ''),
         ]);
     }
 
@@ -1548,6 +1552,9 @@ class PaymentController extends Controller
         return response()->json([
             'status' => 200,
             'SoDu' => (int) ($balance['data']['balance'] ?? 0),
+            'account_number' => (string) $acc->account,
+            'account_no' => (string) $acc->account,
+            'accountNo' => (string) $acc->account,
             'accountDescription' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
         ]);
     }
@@ -2568,6 +2575,9 @@ class PaymentController extends Controller
         return response()->json([
             'status' => 200,
             'SoDu' => (int) ($balance['data']['balance'] ?? 0),
+            'account_number' => (string) $acc->account,
+            'account_no' => (string) $acc->account,
+            'accountNo' => (string) $acc->account,
             'accountDescription' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
         ]);
     }
@@ -3305,6 +3315,9 @@ class PaymentController extends Controller
         return response()->json([
             'status' => 200,
             'SoDu' => (int) ($balance['data']['balance'] ?? 0),
+            'account_number' => (string) $acc->account,
+            'account_no' => (string) $acc->account,
+            'accountNo' => (string) $acc->account,
             'accountDescription' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
         ]);
     }
@@ -4460,6 +4473,9 @@ class PaymentController extends Controller
         return response()->json([
             'status'             => '200',
             'SoDu'               => $soDuNum,
+            'account_number'     => (string) $acc->stk,
+            'account_no'         => (string) $acc->stk,
+            'accountNo'          => (string) $acc->stk,
             'accountDescription' => $accountDescription,
         ]);
     }

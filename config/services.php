@@ -38,9 +38,21 @@ return [
   ],
 
   'vcb_rsa' => [
-    'default_public_key' => env('VCB_DEFAULT_PUBLIC_KEY', ''),
-    'client_public_key' => env('VCB_CLIENT_PUBLIC_KEY', ''),
-    'client_private_key' => env('VCB_CLIENT_PRIVATE_KEY', ''),
+    'default_public_key' => env('VCB_DEFAULT_PUBLIC_KEY') ?: (
+      is_readable(public_path('v1.0/core/serverPublic.pem'))
+        ? base64_encode((string) file_get_contents(public_path('v1.0/core/serverPublic.pem')))
+        : ''
+    ),
+    'client_public_key' => env('VCB_CLIENT_PUBLIC_KEY') ?: preg_replace(
+      '/\-+BEGIN PUBLIC KEY\-+|\-+END PUBLIC KEY\-+|\s+/',
+      '',
+      (string) @file_get_contents(public_path('v1.0/core/clientPublic.pem'))
+    ),
+    'client_private_key' => env('VCB_CLIENT_PRIVATE_KEY') ?: (
+      is_readable(public_path('v1.0/core/clientPrivate.pem'))
+        ? (string) file_get_contents(public_path('v1.0/core/clientPrivate.pem'))
+        : ''
+    ),
   ],
 
   'mbbank' => [

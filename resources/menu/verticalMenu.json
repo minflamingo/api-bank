@@ -1,0 +1,96 @@
+{
+  "menu": [
+    {
+      "url": "/",
+      "name": "Tổng quan",
+      "icon": "menu-icon tf-icons bx bx-home",
+      "slug": "v2"
+    },
+    {
+      "url": "/admin",
+      "name": "Khu Super Admin",
+      "icon": "menu-icon tf-icons bx bx-shield-quarter",
+      "slug": "admin.dashboard",
+      "roles": [1],
+      "target": ""
+    },
+    {
+      "url": "/bank-accounts",
+      "name": "Tài khoản ngân hàng",
+      "slug": "bank.accounts.index",
+      "icon": "menu-icon tf-icons bx bx-credit-card",
+      "target": ""
+    },
+    {
+      "url": "/client/payin",
+      "name": "Nạp Tiền",
+      "icon": "menu-icon tf-icons bx bx-money",
+      "slug": "client.payin"
+    },
+    {
+      "url": "/client/upgrade",
+      "name": "Gia Hạn API",
+      "icon": "menu-icon tf-icons bx bx-time-five",
+      "slug": "client.upgrade"
+    },
+    {
+      "name": "Tài khoản",
+      "icon": "menu-icon tf-icons bx bx-user",
+      "slug": "pages",
+      "submenu": [
+        {
+          "url": "pages/account-settings-account",
+          "name": "Thông tin tài khoản",
+          "icon": "menu-icon tf-icons bx bx bx-detail",
+          "slug": "pages-account-settings-account",
+          "target": ""
+        },
+        {
+          "url": "/pages/account-security",
+          "name": "Bảo mật",
+          "icon": "menu-icon tf-icons bx bx-lock",
+          "slug": "pages-account-security",
+          "target": ""
+        },
+        {
+          "url": "/pages/account-settings-notifications",
+          "name": "Thông báo",
+          "icon": "menu-icon tf-icons bx bx bx-bell",
+          "slug": "pages-account-settings-notifications",
+          "target": ""
+        },
+        {
+          "url": "/pages/account-settings-connections",
+          "name": "Kết nối API",
+          "icon": "menu-icon tf-icons bx bx-link-alt",
+          "slug": "pages-account-settings-connections",
+          "target": ""
+        },
+        {
+          "url": "/logout",
+          "name": "Đăng xuất",
+          "icon": "menu-icon tf-icons bx bx bx-power-off",
+          "slug": "logout",
+          "target": ""
+        }
+      ]
+    },
+    {
+      "menuHeader": "Thông tin"
+    },
+    {
+      "url": "/support",
+      "icon": "menu-icon tf-icons bx bx-support",
+      "name": "Hỗ trợ",
+      "slug": "pages-support",
+      "target": ""
+    },
+    {
+      "url": "/docs",
+      "icon": "menu-icon tf-icons bx bx-file",
+      "name": "Tài liệu API",
+      "slug": "pages-docs",
+      "target": ""
+    }
+  ]
+}

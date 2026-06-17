@@ -49,6 +49,10 @@ class LoginBasic extends Controller
         $request->session()->regenerate();
         $this->writeAuthLog($request, $user, 'Đăng nhập');
 
+        if ($redirect = $this->bridgeIntentRedirect($request)) {
+            return $redirect;
+        }
+
         return redirect('/')
                ->with('success', 'Đăng nhập thành công!');
     }
@@ -112,5 +116,20 @@ class LoginBasic extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
+    }
+
+    private function bridgeIntentRedirect(Request $request)
+    {
+        $intent = trim((string) $request->session()->pull('quanly_sso_bridge_intent', ''));
+        if ($intent === '') {
+            return null;
+        }
+
+        $bridgeUrl = url('/auth/bridge/quanly');
+        if (str_starts_with($intent, $bridgeUrl)) {
+            return redirect($intent);
+        }
+
+        return null;
     }
 }

@@ -214,6 +214,9 @@
           @if (session('error'))
             <div class="alert alert-danger auth-alert mb-4"><i class="bx bx-error-circle"></i><div>{{ session('error') }}</div></div>
           @endif
+          @if (session('info'))
+            <div class="alert alert-info auth-alert mb-4"><i class="bx bx-info-circle"></i><div>{{ session('info') }}</div></div>
+          @endif
 
           @if($mode === 'login')
             @if ($errors->any())

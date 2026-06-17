@@ -557,18 +557,17 @@ class PayinController extends Controller
 
         $validated = $request->validate([
             'techcombank_username' => ['required', 'string', 'max:64'],
-            'techcombank_password' => ['required', 'string', 'max:255'],
+            'techcombank_password' => ['nullable', 'string', 'max:255'],
             'techcombank_account_no' => ['required', 'string', 'max:32', 'regex:/^[0-9]+$/'],
         ], [
             'techcombank_username.required' => 'Vui lòng nhập tài khoản Techcombank.',
-            'techcombank_password.required' => 'Vui lòng nhập mật khẩu Techcombank.',
             'techcombank_account_no.required' => 'Vui lòng nhập số tài khoản Techcombank nhận tiền.',
             'techcombank_account_no.regex' => 'Số tài khoản Techcombank chỉ gồm chữ số.',
         ]);
 
         $request->merge([
             'account' => trim($validated['techcombank_username']),
-            'password' => (string) $validated['techcombank_password'],
+            'password' => (string) ($validated['techcombank_password'] ?? ''),
             'stk' => trim($validated['techcombank_account_no']),
             'system_receiver' => 1,
         ]);
@@ -582,11 +581,12 @@ class PayinController extends Controller
 
         session()->put('recharge_receiver_techcombank_pending', [
             'username' => trim($validated['techcombank_username']),
-            'password' => (string) $validated['techcombank_password'],
+            'password' => (string) ($validated['techcombank_password'] ?? ''),
             'account_no' => trim($validated['techcombank_account_no']),
+            'auth_url' => (string) ($payload['auth_url'] ?? ''),
         ]);
 
-        return back()->with('success', (string) ($payload['msg'] ?? 'Techcombank đã gửi yêu cầu xác nhận tới app Mobile.'));
+        return back()->with('success', (string) ($payload['msg'] ?? 'Đã tạo link đăng nhập Techcombank. Mở link, duyệt Mobile rồi dán URL xác nhận.'));
     }
 
     public function storeReceiverTechcombankAccount(Request $request, PaymentController $payment)
@@ -598,11 +598,18 @@ class PayinController extends Controller
             return back()->withErrors(['techcombank' => 'Chưa có phiên xác nhận Techcombank. Vui lòng gửi yêu cầu lại.']);
         }
 
+        $validated = $request->validate([
+            'techcombank_redirect_url' => ['required', 'string', 'max:4096'],
+        ], [
+            'techcombank_redirect_url.required' => 'Vui lòng dán URL sau khi xác nhận Techcombank.',
+        ]);
+
         $request->merge([
             'account' => (string) ($pending['username'] ?? ''),
             'password' => (string) ($pending['password'] ?? ''),
             'stk' => (string) ($pending['account_no'] ?? ''),
             'system_receiver' => 1,
+            'redirect_url' => trim((string) $validated['techcombank_redirect_url']),
         ]);
 
         $payload = $this->payloadFromPaymentResponse($payment->techcombankConfirmLogin($request));

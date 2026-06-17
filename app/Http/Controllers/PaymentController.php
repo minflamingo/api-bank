@@ -3173,11 +3173,11 @@ class PaymentController extends Controller
         }
 
         $account = trim((string) $request->input('account'));
-        $password = (string) $request->input('password');
+        $password = (string) $request->input('password', '');
         $stk = trim((string) $request->input('stk'));
 
-        if ($account === '' || $password === '' || $stk === '') {
-            return response()->json(['status' => '1', 'msg' => 'Vui lòng nhập đủ tài khoản, mật khẩu và số tài khoản Techcombank']);
+        if ($account === '' || $stk === '') {
+            return response()->json(['status' => '1', 'msg' => 'Vui lòng nhập đủ tài khoản đăng nhập và số tài khoản Techcombank']);
         }
 
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
@@ -3190,7 +3190,7 @@ class PaymentController extends Controller
             ]);
         }
 
-        $login = $this->techcombankLoginRequest($account, $password);
+        $login = $this->techcombankManualLoginRequest();
         if (empty($login['success'])) {
             return response()->json([
                 'status' => '1',
@@ -3205,13 +3205,13 @@ class PaymentController extends Controller
             ],
             [
                 'username' => $account,
-                'password' => $password,
+                'password' => $password !== '' ? $password : (string) ($existing->password ?? ''),
                 'name' => $existing->name ?? null,
                 'auth_token' => null,
                 'refresh_token' => null,
                 'arrangement_id' => null,
-                'cookie' => (string) ($login['cookie'] ?? ''),
-                'login_url' => (string) ($login['login_url'] ?? ''),
+                'cookie' => '',
+                'login_url' => (string) ($login['auth_url'] ?? ''),
                 'code_verifier' => (string) ($login['code_verifier'] ?? ''),
                 'code_challenge' => (string) ($login['code_challenge'] ?? ''),
                 'state' => (string) ($login['state'] ?? ''),
@@ -3225,7 +3225,9 @@ class PaymentController extends Controller
 
         return response()->json([
             'status' => '2',
-            'msg' => 'Techcombank đã gửi yêu cầu xác nhận tới app Mobile. Hãy duyệt trên điện thoại rồi bấm Hoàn tất xác nhận.',
+            'msg' => 'Đã tạo link đăng nhập Techcombank. Hãy mở link, đăng nhập và duyệt trên app Mobile, sau đó dán URL sau xác nhận về hệ thống.',
+            'manual_login' => true,
+            'auth_url' => (string) ($login['auth_url'] ?? ''),
         ]);
     }
 
@@ -3250,7 +3252,10 @@ class PaymentController extends Controller
             return response()->json(['status' => '1', 'msg' => 'Không tìm thấy phiên Techcombank đang chờ xác nhận']);
         }
 
-        $confirm = $this->techcombankCompleteLogin($acc);
+        $redirectUrl = trim((string) $request->input('redirect_url', ''));
+        $confirm = $redirectUrl !== ''
+            ? $this->techcombankCompleteManualLogin($acc, $redirectUrl)
+            : $this->techcombankCompleteLogin($acc);
         if (empty($confirm['success'])) {
             return response()->json([
                 'status' => '1',
@@ -3542,6 +3547,32 @@ class PaymentController extends Controller
         ];
     }
 
+    private function techcombankManualLoginRequest(): array
+    {
+        $state = $this->techcombankNonce();
+        $nonce = $this->techcombankNonce();
+        $codeVerifier = $this->techcombankRandomString(96);
+        $codeChallenge = $this->techcombankCodeChallenge($codeVerifier);
+        $authUrl = 'https://identity-tcb.techcombank.com.vn/auth/realms/backbase/protocol/openid-connect/auth'
+            . '?client_id=tcb-web-client'
+            . '&redirect_uri=https%3A%2F%2Fonlinebanking.techcombank.com.vn%2Flogin'
+            . '&state=' . rawurlencode($state)
+            . '&response_mode=fragment&response_type=code%20id_token%20token&scope=openid'
+            . '&nonce=' . rawurlencode($nonce)
+            . '&ui_locales=en-US%20vi'
+            . '&code_challenge=' . rawurlencode($codeChallenge)
+            . '&code_challenge_method=S256';
+
+        return [
+            'success' => true,
+            'auth_url' => $authUrl,
+            'state' => $state,
+            'nonce' => $nonce,
+            'code_verifier' => $codeVerifier,
+            'code_challenge' => $codeChallenge,
+        ];
+    }
+
     private function techcombankCompleteLogin(AccountTechcombank $acc): array
     {
         if (empty($acc->login_url) || empty($acc->code_verifier)) {
@@ -3616,6 +3647,38 @@ class PaymentController extends Controller
         $acc->auth_token = (string) $token['access_token'];
         $acc->refresh_token = (string) ($token['refresh_token'] ?? $acc->refresh_token);
         $acc->cookie = (string) ($token['_cookie'] ?? $cookie);
+        $acc->is_login = true;
+        $acc->login_url = null;
+        $acc->create_date = now();
+        $acc->save();
+
+        return ['success' => true];
+    }
+
+    private function techcombankCompleteManualLogin(AccountTechcombank $acc, string $redirectUrl): array
+    {
+        if (empty($acc->code_verifier)) {
+            return ['success' => false, 'message' => 'Phiên Techcombank chưa sẵn sàng. Vui lòng tạo link đăng nhập lại.'];
+        }
+
+        $code = $this->techcombankExtractCode($redirectUrl);
+        if ($code === '') {
+            return ['success' => false, 'message' => 'URL Techcombank chưa có mã xác thực. Hãy đăng nhập, duyệt trên app Mobile rồi copy toàn bộ URL sau xác nhận.'];
+        }
+
+        $state = $this->techcombankExtractParam($redirectUrl, 'state');
+        if ($state !== '' && !hash_equals((string) $acc->state, $state)) {
+            return ['success' => false, 'message' => 'URL xác nhận Techcombank không khớp phiên hiện tại. Vui lòng tạo link đăng nhập lại.'];
+        }
+
+        $token = $this->techcombankTokenRequest($acc, $code, (string) $acc->cookie);
+        if (empty($token['access_token'])) {
+            return ['success' => false, 'message' => (string) ($token['error_description'] ?? 'Không lấy được token Techcombank từ URL xác nhận')];
+        }
+
+        $acc->auth_token = (string) $token['access_token'];
+        $acc->refresh_token = (string) ($token['refresh_token'] ?? $acc->refresh_token);
+        $acc->cookie = (string) ($token['_cookie'] ?? $acc->cookie);
         $acc->is_login = true;
         $acc->login_url = null;
         $acc->create_date = now();
@@ -3968,6 +4031,16 @@ class PaymentController extends Controller
 
         if (preg_match('/"code"\s*:\s*"([^"]+)"/i', $url, $match)) {
             return stripcslashes($match[1]);
+        }
+
+        return '';
+    }
+
+    private function techcombankExtractParam(string $url, string $name): string
+    {
+        $name = preg_quote($name, '/');
+        if (preg_match('/[?#&]' . $name . '=([^&]+)/', $url, $match)) {
+            return urldecode($match[1]);
         }
 
         return '';

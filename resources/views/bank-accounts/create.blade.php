@@ -404,7 +404,7 @@
                          required>
                 </div>
               </div>
-              <div class="col-12">
+              <div class="col-12" data-password-field>
                 <label class="form-label fw-semibold" for="bankPassword">Mật khẩu ngân hàng</label>
                 <div class="input-group">
                   <span class="input-group-text field-icon"><i class="bx bx-lock-alt"></i></span>
@@ -439,6 +439,23 @@
                        inputmode="numeric"
                        autocomplete="one-time-code"
                        placeholder="------">
+              </div>
+              <div data-techcombank-manual-area style="display:none">
+                <div class="d-flex flex-column flex-md-row gap-2 mb-3">
+                  <a class="btn btn-outline-primary btn-touch" href="#" target="_blank" rel="noopener" data-techcombank-auth-link>
+                    <i class="bx bx-log-in-circle"></i> Mở Techcombank
+                  </a>
+                  <button class="btn btn-outline-secondary btn-touch" type="button" data-copy-techcombank-link>
+                    <i class="bx bx-copy"></i> Copy link
+                  </button>
+                </div>
+                <label class="form-label fw-semibold" for="bankRedirectUrl">URL sau khi xác nhận trên Techcombank</label>
+                <textarea id="bankRedirectUrl"
+                          class="form-control"
+                          name="redirect_url"
+                          rows="3"
+                          placeholder="Dán toàn bộ URL có code=... sau khi đăng nhập và duyệt app Mobile"></textarea>
+                <div class="text-muted small mt-2">Sau khi đăng nhập thành công, copy nguyên thanh địa chỉ của trình duyệt rồi dán vào đây.</div>
               </div>
             </div>
 
@@ -499,11 +516,18 @@ document.addEventListener('DOMContentLoaded', function () {
   const otpPanel = page.querySelector('[data-otp-panel]');
   const otpInput = document.getElementById('bankOtp');
   const otpCodeArea = page.querySelector('[data-otp-code-area]');
+  const manualArea = page.querySelector('[data-techcombank-manual-area]');
+  const authLink = page.querySelector('[data-techcombank-auth-link]');
+  const copyAuthLinkBtn = page.querySelector('[data-copy-techcombank-link]');
+  const redirectInput = document.getElementById('bankRedirectUrl');
   const alerts = page.querySelector('[data-form-alerts]');
   const note = page.querySelector('[data-bank-note]');
   const usernameLabel = page.querySelector('[data-username-label]');
   const accountLabel = page.querySelector('[data-account-label]');
+  const passwordField = page.querySelector('[data-password-field]');
+  const passwordInput = document.getElementById('bankPassword');
   const isEditMode = page.dataset.editMode === '1';
+  const pendingTechcombankAuthUrl = @json($pendingBank === 'techcombank' ? ($pending['auth_url'] ?? '') : '');
   const bankNames = {
     acb: 'ACB',
     vcb: 'Vietcombank',
@@ -537,9 +561,9 @@ document.addEventListener('DOMContentLoaded', function () {
     techcombank: {
       username: 'Tên đăng nhập Techcombank',
       account: 'Số tài khoản Techcombank',
-      noteTitle: 'Techcombank xác nhận trên app Mobile',
-      noteText: 'Sau khi gửi yêu cầu, mở Techcombank Mobile để duyệt đăng nhập web rồi bấm hoàn tất trên form.',
-      submit: 'Gửi yêu cầu Techcombank'
+      noteTitle: 'Techcombank đăng nhập bằng trình duyệt thật',
+      noteText: 'Hệ thống chỉ tạo link bảo mật. Bạn mở Techcombank, đăng nhập và duyệt Mobile trực tiếp trên trình duyệt rồi dán URL xác nhận lại.',
+      submit: 'Tạo link Techcombank'
     },
     mbbank: {
       username: 'Tên đăng nhập MBBank',
@@ -560,6 +584,9 @@ document.addEventListener('DOMContentLoaded', function () {
     usernameLabel.textContent = copy.username;
     accountLabel.textContent = copy.account;
     note.innerHTML = '<div class="fw-semibold mb-1">' + copy.noteTitle + '</div><div class="text-muted small">' + copy.noteText + '</div>';
+    const isTechcombank = bank === 'techcombank';
+    if (passwordField) passwordField.style.display = isTechcombank ? 'none' : '';
+    if (passwordInput) passwordInput.required = !isTechcombank;
     if (stepInput.value !== 'otp') submitText.textContent = isEditMode ? 'Cập nhật ' + (bankNames[bank] || 'tài khoản') : copy.submit;
   }
 
@@ -578,7 +605,7 @@ document.addEventListener('DOMContentLoaded', function () {
       delete submitBtn.dataset.oldHtml;
       submitText = page.querySelector('[data-submit-text]');
       if (stepInput.value === 'otp') {
-        submitText.textContent = selectedBank() === 'techcombank' ? 'Hoàn tất xác nhận & lưu' : 'Xác thực OTP & lưu';
+        submitText.textContent = selectedBank() === 'techcombank' ? 'Hoàn tất bằng URL xác nhận' : 'Xác thực OTP & lưu';
       } else {
         updateBankCopy();
       }
@@ -596,7 +623,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (stepInput.value === 'otp') {
       payload.bank_code = selectedBank();
-      if (selectedBank() !== 'techcombank') {
+      if (selectedBank() === 'techcombank') {
+        payload.redirect_url = redirectInput ? redirectInput.value.trim() : '';
+      } else {
         payload.otp_code = otpInput.value.trim();
       }
     }
@@ -604,8 +633,9 @@ document.addEventListener('DOMContentLoaded', function () {
     return payload;
   }
 
-  function openOtp(message, bank) {
+  function openOtp(message, bank, authUrl) {
     bank = bank || selectedBank();
+    authUrl = authUrl || pendingTechcombankAuthUrl || '';
     stepInput.value = 'otp';
     const input = form.querySelector('input[name="bank_code"][value="' + bank + '"]');
     if (input) input.checked = true;
@@ -613,19 +643,34 @@ document.addEventListener('DOMContentLoaded', function () {
     page.querySelector('[data-step-card="verify"]').classList.add('is-active');
     const isTechcombank = bank === 'techcombank';
     if (otpCodeArea) otpCodeArea.style.display = isTechcombank ? 'none' : '';
+    if (manualArea) manualArea.style.display = isTechcombank ? '' : 'none';
+    if (authLink) {
+      authLink.href = authUrl || '#';
+      authLink.classList.toggle('disabled', !authUrl);
+    }
     otpInput.required = !isTechcombank;
-    submitText.textContent = isTechcombank ? 'Hoàn tất xác nhận & lưu' : 'Xác thực OTP & lưu';
-    page.querySelector('[data-otp-title]').textContent = isTechcombank ? 'Techcombank chờ xác nhận app' : (bank === 'vpbank' ? 'VPBank' : 'Vietcombank') + ' yêu cầu OTP';
-    page.querySelector('[data-otp-message]').textContent = message || (isTechcombank ? 'Duyệt đăng nhập trên Techcombank Mobile rồi bấm hoàn tất.' : 'Nhập OTP để hoàn tất.');
+    if (redirectInput) redirectInput.required = isTechcombank;
+    submitText.textContent = isTechcombank ? 'Hoàn tất bằng URL xác nhận' : 'Xác thực OTP & lưu';
+    page.querySelector('[data-otp-title]').textContent = isTechcombank ? 'Mở Techcombank và dán URL xác nhận' : (bank === 'vpbank' ? 'VPBank' : 'Vietcombank') + ' yêu cầu OTP';
+    page.querySelector('[data-otp-message]').textContent = message || (isTechcombank ? 'Đăng nhập trên trang Techcombank thật, duyệt Mobile, copy URL có code=... rồi dán bên dưới.' : 'Nhập OTP để hoàn tất.');
     updateBankCopy();
-    if (!isTechcombank) setTimeout(() => otpInput.focus(), 80);
+    if (isTechcombank) {
+      setTimeout(() => redirectInput?.focus(), 80);
+    } else {
+      setTimeout(() => otpInput.focus(), 80);
+    }
   }
 
   function resetForm() {
     stepInput.value = 'init';
     otpInput.value = '';
     otpInput.required = false;
+    if (redirectInput) {
+      redirectInput.value = '';
+      redirectInput.required = false;
+    }
     if (otpCodeArea) otpCodeArea.style.display = '';
+    if (manualArea) manualArea.style.display = 'none';
     otpPanel.classList.remove('is-open');
     page.querySelector('[data-step-card="verify"]').classList.remove('is-active');
     updateBankCopy();
@@ -659,7 +704,7 @@ document.addEventListener('DOMContentLoaded', function () {
       .then(data => {
         if (data.needs_otp) {
           showAlert('warning', data.message || 'Vui lòng nhập OTP.');
-          openOtp(data.message, data.bank_code || selectedBank());
+          openOtp(data.message, data.bank_code || selectedBank(), data.auth_url || '');
           return;
         }
 
@@ -686,9 +731,16 @@ document.addEventListener('DOMContentLoaded', function () {
     input.type = input.type === 'password' ? 'text' : 'password';
   });
 
+  copyAuthLinkBtn?.addEventListener('click', function () {
+    const url = authLink?.href || '';
+    if (!url || url === '#') return;
+    navigator.clipboard?.writeText(url);
+    showAlert('info', 'Đã copy link đăng nhập Techcombank.');
+  });
+
   if (page.dataset.hasPendingOtp === '1') {
     const pendingBank = page.dataset.pendingBank || 'vcb';
-    openOtp(pendingBank === 'techcombank' ? 'Duyệt đăng nhập trên Techcombank Mobile rồi bấm hoàn tất.' : 'Tiếp tục nhập OTP để hoàn tất.', pendingBank);
+    openOtp(pendingBank === 'techcombank' ? 'Mở Techcombank, đăng nhập, duyệt Mobile rồi dán URL xác nhận.' : 'Tiếp tục nhập OTP để hoàn tất.', pendingBank, pendingTechcombankAuthUrl);
   }
   updateBankCopy();
 });

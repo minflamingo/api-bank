@@ -1254,16 +1254,6 @@
                 </div>
               </div>
               <div class="col-12">
-                <label class="form-label fw-semibold" for="techcombank_password">Mật khẩu Techcombank</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-lock-alt"></i></span>
-                  <input class="form-control" id="techcombank_password" name="techcombank_password" type="password" autocomplete="new-password" required>
-                  <button class="btn btn-outline-secondary" type="button" data-toggle-password>
-                    <i class="bx bx-show"></i>
-                  </button>
-                </div>
-              </div>
-              <div class="col-12">
                 <label class="form-label fw-semibold" for="techcombank_account_no">Số tài khoản nhận</label>
                 <div class="input-group">
                   <span class="input-group-text field-icon"><i class="bx bx-hash"></i></span>
@@ -1272,7 +1262,7 @@
               </div>
               <div class="col-12 connect-actions">
                 <button class="btn btn-outline-primary btn-touch w-100" type="submit">
-                  <i class="bx bx-mobile-alt"></i> Gửi yêu cầu Techcombank
+                  <i class="bx bx-log-in-circle"></i> Tạo link Techcombank
                 </button>
               </div>
             </div>
@@ -1354,11 +1344,28 @@
                 <i class="bx bx-mobile-alt fs-4 text-warning"></i>
                 <div>
                   <div class="fw-semibold">Hoàn tất Techcombank</div>
-                  <div class="text-muted small">Duyệt trên app Mobile cho {{ $pendingTechcombank['username'] ?? '-' }} · {{ $pendingTechcombank['account_no'] ?? '-' }} rồi bấm nút dưới.</div>
+                  <div class="text-muted small">Mở Techcombank cho {{ $pendingTechcombank['username'] ?? '-' }} · {{ $pendingTechcombank['account_no'] ?? '-' }}, đăng nhập, duyệt Mobile rồi dán URL xác nhận.</div>
                 </div>
               </div>
+              @if(!empty($pendingTechcombank['auth_url']))
+                <div class="d-flex flex-column flex-md-row gap-2 mb-3">
+                  <a class="btn btn-outline-primary btn-touch" href="{{ $pendingTechcombank['auth_url'] }}" target="_blank" rel="noopener">
+                    <i class="bx bx-log-in-circle"></i> Mở Techcombank
+                  </a>
+                  <button class="btn btn-outline-secondary btn-touch" type="button" data-copy-text="{{ $pendingTechcombank['auth_url'] }}">
+                    <i class="bx bx-copy"></i> Copy link
+                  </button>
+                </div>
+              @endif
+              <label class="form-label fw-semibold" for="techcombank_redirect_url">URL sau khi xác nhận</label>
+              <textarea class="form-control mb-3"
+                        id="techcombank_redirect_url"
+                        name="techcombank_redirect_url"
+                        rows="3"
+                        placeholder="Dán toàn bộ URL có code=... sau khi đăng nhập và duyệt app Mobile"
+                        required>{{ old('techcombank_redirect_url') }}</textarea>
               <button class="btn btn-primary btn-touch w-100" type="submit">
-                <i class="bx bx-check-shield"></i> Hoàn tất và chọn Techcombank
+                <i class="bx bx-check-shield"></i> Lưu bằng URL xác nhận
               </button>
             </form>
           @endif
@@ -1506,8 +1513,8 @@
       body: 'Nhập tài khoản VPBank, mật khẩu và số tài khoản nhận để gửi OTP khi cần.'
     },
     techcombank: {
-      title: 'Techcombank xác nhận trên app',
-      body: 'Nhập tài khoản Techcombank, mật khẩu và số tài khoản nhận, sau đó duyệt đăng nhập trên app Mobile.'
+      title: 'Techcombank đăng nhập bằng trình duyệt thật',
+      body: 'Nhập tài khoản và số tài khoản nhận, tạo link, đăng nhập trực tiếp trên Techcombank rồi dán URL xác nhận.'
     },
     mbbank: {
       title: 'MBBank kết nối trực tiếp',
@@ -1560,6 +1567,14 @@
       if (!confirm('Xóa account hệ thống này?')) {
         event.preventDefault();
       }
+    });
+  });
+
+  document.querySelectorAll('[data-copy-text]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const value = button.dataset.copyText || '';
+      if (!value) return;
+      navigator.clipboard?.writeText(value);
     });
   });
 

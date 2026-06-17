@@ -156,16 +156,18 @@ class BankAccountsController extends Controller
                 'step' => ['required', Rule::in(['otp'])],
                 'bank_code' => ['required', Rule::in(['vcb', 'vpbank', 'techcombank'])],
                 'username' => ['required', 'string', 'max:64'],
-                'password' => ['required', 'string', 'max:128'],
+                'password' => [Rule::requiredIf(fn () => (string) $request->input('bank_code') !== 'techcombank'), 'nullable', 'string', 'max:128'],
                 'account_no' => ['required', 'string', 'max:32'],
                 'otp_code' => ['nullable', 'string', 'max:12'],
+                'redirect_url' => [Rule::requiredIf(fn () => (string) $request->input('bank_code') === 'techcombank'), 'nullable', 'string', 'max:4096'],
             ], $this->validationMessages(), $this->validationAttributes());
 
             $request->merge([
                 'account' => $data['username'],
-                'password' => $data['password'],
+                'password' => (string) ($data['password'] ?? ''),
                 'stk' => $data['account_no'],
                 'otp' => $data['otp_code'] ?? '',
+                'redirect_url' => (string) ($data['redirect_url'] ?? ''),
             ]);
 
             $payload = $this->payloadFrom(match ($data['bank_code']) {
@@ -194,13 +196,13 @@ class BankAccountsController extends Controller
             'step' => ['required', Rule::in(['init'])],
                 'bank_code' => ['required', Rule::in(['acb', 'vcb', 'vpbank', 'techcombank', 'mbbank'])],
             'username' => ['required', 'string', 'max:64'],
-            'password' => ['required', 'string', 'max:128'],
+            'password' => [Rule::requiredIf(fn () => (string) $request->input('bank_code') !== 'techcombank'), 'nullable', 'string', 'max:128'],
             'account_no' => ['required', 'string', 'max:32'],
         ], $this->validationMessages(), $this->validationAttributes());
 
         $request->merge([
             'account' => $data['username'],
-            'password' => $data['password'],
+            'password' => (string) ($data['password'] ?? ''),
             'stk' => $data['account_no'],
         ]);
 
@@ -257,14 +259,17 @@ class BankAccountsController extends Controller
             if ($status === '2') {
                 session()->put('bank_accounts_techcombank_pending', [
                     'username' => $data['username'],
-                    'password' => $data['password'],
+                    'password' => (string) ($data['password'] ?? ''),
                     'account_no' => $data['account_no'],
+                    'auth_url' => (string) ($payload['auth_url'] ?? ''),
                 ]);
 
                 return $this->respondConnect($request, [
                     'ok' => false,
                     'needs_otp' => true,
                     'bank_code' => 'techcombank',
+                    'manual_login' => true,
+                    'auth_url' => (string) ($payload['auth_url'] ?? ''),
                     'message' => (string) ($payload['msg'] ?? 'Techcombank đã gửi yêu cầu xác nhận tới app Mobile.'),
                 ]);
             }
@@ -403,6 +408,7 @@ class BankAccountsController extends Controller
             'password' => 'mật khẩu ngân hàng',
             'account_no' => 'số tài khoản',
             'otp_code' => 'mã OTP',
+            'redirect_url' => 'URL xác nhận Techcombank',
         ];
     }
 

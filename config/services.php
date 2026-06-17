@@ -1,5 +1,16 @@
 <?php
 
+$legacyVcbKeys = [];
+$legacyVcbDecode = __DIR__ . '/../public/v1.0/core/class/decode.php';
+if (is_readable($legacyVcbDecode)) {
+  $legacyVcbSource = (string) file_get_contents($legacyVcbDecode);
+  foreach (['defaultPublicKey', 'clientPublicKey', 'clientPrivateKey'] as $legacyVcbKey) {
+    if (preg_match('/define\("' . $legacyVcbKey . '",\s*"(.*?)"\);/s', $legacyVcbSource, $legacyVcbMatch)) {
+      $legacyVcbKeys[$legacyVcbKey] = stripcslashes($legacyVcbMatch[1]);
+    }
+  }
+}
+
 return [
 
   /*
@@ -39,19 +50,27 @@ return [
 
   'vcb_rsa' => [
     'default_public_key' => env('VCB_DEFAULT_PUBLIC_KEY') ?: (
-      is_readable(public_path('v1.0/core/serverPublic.pem'))
-        ? base64_encode((string) file_get_contents(public_path('v1.0/core/serverPublic.pem')))
-        : ''
+      !empty($legacyVcbKeys['defaultPublicKey'])
+        ? $legacyVcbKeys['defaultPublicKey']
+        : (is_readable(public_path('v1.0/core/serverPublic.pem'))
+          ? base64_encode((string) file_get_contents(public_path('v1.0/core/serverPublic.pem')))
+          : '')
     ),
-    'client_public_key' => env('VCB_CLIENT_PUBLIC_KEY') ?: preg_replace(
-      '/\-+BEGIN PUBLIC KEY\-+|\-+END PUBLIC KEY\-+|\s+/',
-      '',
-      (string) @file_get_contents(public_path('v1.0/core/clientPublic.pem'))
+    'client_public_key' => env('VCB_CLIENT_PUBLIC_KEY') ?: (
+      !empty($legacyVcbKeys['clientPublicKey'])
+        ? $legacyVcbKeys['clientPublicKey']
+        : preg_replace(
+          '/\-+BEGIN PUBLIC KEY\-+|\-+END PUBLIC KEY\-+|\s+/',
+          '',
+          (string) @file_get_contents(public_path('v1.0/core/clientPublic.pem'))
+        )
     ),
     'client_private_key' => env('VCB_CLIENT_PRIVATE_KEY') ?: (
-      is_readable(public_path('v1.0/core/clientPrivate.pem'))
-        ? (string) file_get_contents(public_path('v1.0/core/clientPrivate.pem'))
-        : ''
+      !empty($legacyVcbKeys['clientPrivateKey'])
+        ? $legacyVcbKeys['clientPrivateKey']
+        : (is_readable(public_path('v1.0/core/clientPrivate.pem'))
+          ? (string) file_get_contents(public_path('v1.0/core/clientPrivate.pem'))
+          : '')
     ),
   ],
 

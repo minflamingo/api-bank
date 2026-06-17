@@ -3509,6 +3509,12 @@ class PaymentController extends Controller
         );
 
         $body = (string) ($post['body'] ?? '');
+        if ((int) ($post['status'] ?? 0) === 403 || str_contains($body, 'Access Denied')) {
+            return [
+                'success' => false,
+                'message' => 'Techcombank đang chặn request đăng nhập tự động từ máy chủ (403 Access Denied), nên chưa gửi được yêu cầu xác nhận Mobile. Cần dùng proxy/browser sạch cho Techcombank hoặc đăng nhập thủ công.',
+            ];
+        }
         if (str_contains($body, 'Incorrect username or password')) {
             return ['success' => false, 'message' => 'Tài khoản hoặc mật khẩu Techcombank không đúng'];
         }
@@ -3930,11 +3936,26 @@ class PaymentController extends Controller
 
     private function techcombankFormAction(string $html): string
     {
-        if (!preg_match('/<form[^>]+action="([^"]+)"/i', $html, $match)) {
+        if (!preg_match('/<form\b[^>]*\baction\s*=\s*(["\'])(.*?)\1/i', $html, $match)) {
+            if (!preg_match('/<form\b[^>]*\baction\s*=\s*([^\s>]+)/i', $html, $fallbackMatch)) {
+                return '';
+            }
+
+            $url = $fallbackMatch[1];
+        } else {
+            $url = $match[2];
+        }
+
+        $url = trim(html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        if ($url === '') {
             return '';
         }
 
-        $url = html_entity_decode($match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (str_starts_with($url, '//')) {
+            $url = 'https:' . $url;
+        } elseif (str_starts_with($url, '/')) {
+            $url = 'https://identity-tcb.techcombank.com.vn' . $url;
+        }
 
         return $url . (str_contains($url, '?') ? '&' : '?') . 'kc_locale=en-US';
     }
@@ -4026,7 +4047,6 @@ class PaymentController extends Controller
             'Accept-Language: en-US,en;q=0.9,vi;q=0.8',
             'Cache-Control: max-age=0',
             'Connection: keep-alive',
-            'Host: identity-tcb.techcombank.com.vn',
             'Sec-Fetch-Dest: document',
             'Sec-Fetch-Mode: navigate',
             'Sec-Fetch-Site: same-origin',

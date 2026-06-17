@@ -3549,19 +3549,32 @@ class PaymentController extends Controller
 
     private function techcombankManualLoginRequest(): array
     {
-        $state = $this->techcombankNonce();
-        $nonce = $this->techcombankNonce();
+        $state = $this->techcombankRandomString(64);
+        $nonce = $state;
         $codeVerifier = $this->techcombankRandomString(96);
         $codeChallenge = $this->techcombankCodeChallenge($codeVerifier);
-        $authUrl = 'https://identity-tcb.techcombank.com.vn/auth/realms/backbase/protocol/openid-connect/auth'
-            . '?client_id=tcb-web-client'
-            . '&redirect_uri=https%3A%2F%2Fonlinebanking.techcombank.com.vn%2Flogin'
+        $authUrl = 'https://onlinebanking.techcombank.com.vn/auth/realms/backbase/protocol/openid-connect/auth'
+            . '?response_type=code'
+            . '&client_id=tcb-web-client'
             . '&state=' . rawurlencode($state)
-            . '&response_mode=fragment&response_type=code%20id_token%20token&scope=openid'
-            . '&nonce=' . rawurlencode($nonce)
-            . '&ui_locales=en-US%20vi'
+            . '&redirect_uri=https%3A%2F%2Fonlinebanking.techcombank.com.vn%2Fredirect'
+            . '&scope=openid'
             . '&code_challenge=' . rawurlencode($codeChallenge)
-            . '&code_challenge_method=S256';
+            . '&code_challenge_method=S256'
+            . '&nonce=' . rawurlencode($nonce)
+            . '&ui_locales=en-US'
+            . '&af_force_deeplink=true'
+            . '&is_retargeting=true'
+            . '&utm_source=Website'
+            . '&af_xp=custom'
+            . '&af_reengagement_window=7d'
+            . '&deep_link_sub1=tcb%3A%2F%2Fapplink%3FtargetPage%3DOnO.accountIntroduction'
+            . '&pid=Website'
+            . '&deep_link_value=OnO.accountIntroduction'
+            . '&c=Other_BAU_All_Website_LoginButton'
+            . '&af_dp=tcb%3A%2F%2Fapplink'
+            . '&utm_campaign=Other_BAU_All_Website_LoginButton'
+            . '&utm_medium=Owned_media';
 
         return [
             'success' => true,
@@ -3803,27 +3816,35 @@ class PaymentController extends Controller
             return false;
         }
 
-        $response = $this->techcombankHttp(
-            'POST',
-            'https://identity-tcb.techcombank.com.vn/auth/realms/backbase/protocol/openid-connect/token',
-            $this->techcombankIdentityHeaders([
-                'Accept: */*',
-                'Origin: https://onlinebanking.techcombank.com.vn',
-                'Referer: https://onlinebanking.techcombank.com.vn/',
-                'Content-Type: application/x-www-form-urlencoded',
-                'Authorization: Bearer ' . (string) $acc->auth_token,
-            ]),
-            http_build_query([
-                'grant_type' => 'refresh_token',
-                'client_id' => 'tcb-web-client',
-                'refresh_token' => (string) $acc->refresh_token,
-                'scope' => 'openid',
-                'ui_locales' => 'en-US',
-            ]),
-            (string) $acc->cookie
-        );
+        $body = null;
+        $response = [];
+        foreach ($this->techcombankTokenEndpoints() as $endpoint) {
+            $response = $this->techcombankHttp(
+                'POST',
+                $endpoint,
+                $this->techcombankIdentityHeaders([
+                    'Accept: */*',
+                    'Origin: https://onlinebanking.techcombank.com.vn',
+                    'Referer: https://onlinebanking.techcombank.com.vn/',
+                    'Content-Type: application/x-www-form-urlencoded',
+                    'Authorization: Bearer ' . (string) $acc->auth_token,
+                ]),
+                http_build_query([
+                    'grant_type' => 'refresh_token',
+                    'client_id' => 'tcb-web-client',
+                    'refresh_token' => (string) $acc->refresh_token,
+                    'scope' => 'openid',
+                    'ui_locales' => 'en-US',
+                ]),
+                (string) $acc->cookie
+            );
 
-        $body = json_decode((string) ($response['body'] ?? ''), true);
+            $body = json_decode((string) ($response['body'] ?? ''), true);
+            if (is_array($body) && !empty($body['access_token'])) {
+                break;
+            }
+        }
+
         if (!is_array($body) || empty($body['access_token'])) {
             return false;
         }
@@ -3839,31 +3860,62 @@ class PaymentController extends Controller
 
     private function techcombankTokenRequest(AccountTechcombank $acc, string $code, string $cookie): array
     {
-        $response = $this->techcombankHttp(
-            'POST',
-            'https://identity-tcb.techcombank.com.vn/auth/realms/backbase/protocol/openid-connect/token',
-            $this->techcombankIdentityHeaders([
-                'Origin: https://onlinebanking.techcombank.com.vn',
-                'Referer: https://onlinebanking.techcombank.com.vn/',
-                'Content-Type: application/x-www-form-urlencoded',
-            ]),
-            http_build_query([
-                'code' => $code,
-                'grant_type' => 'authorization_code',
-                'client_id' => 'tcb-web-client',
-                'redirect_uri' => 'https://onlinebanking.techcombank.com.vn/login',
-                'code_verifier' => (string) $acc->code_verifier,
-            ]),
-            $cookie
-        );
+        $redirectUri = $this->techcombankRedirectUriForAccount($acc);
+        $body = null;
+        $response = [];
 
-        $body = json_decode((string) ($response['body'] ?? ''), true);
+        foreach ($this->techcombankTokenEndpoints($this->techcombankUsesOnlinebankingAuth($acc)) as $endpoint) {
+            $response = $this->techcombankHttp(
+                'POST',
+                $endpoint,
+                $this->techcombankIdentityHeaders([
+                    'Accept: */*',
+                    'Origin: https://onlinebanking.techcombank.com.vn',
+                    'Referer: https://onlinebanking.techcombank.com.vn/',
+                    'Content-Type: application/x-www-form-urlencoded',
+                ]),
+                http_build_query([
+                    'code' => $code,
+                    'grant_type' => 'authorization_code',
+                    'client_id' => 'tcb-web-client',
+                    'redirect_uri' => $redirectUri,
+                    'code_verifier' => (string) $acc->code_verifier,
+                ]),
+                $cookie
+            );
+
+            $body = json_decode((string) ($response['body'] ?? ''), true);
+            if (is_array($body) && !empty($body['access_token'])) {
+                break;
+            }
+        }
+
         if (!is_array($body)) {
             return ['error_description' => 'Techcombank token response không hợp lệ'];
         }
         $body['_cookie'] = (string) ($response['cookie'] ?? $cookie);
 
         return $body;
+    }
+
+    private function techcombankUsesOnlinebankingAuth(AccountTechcombank $acc): bool
+    {
+        return str_contains((string) $acc->login_url, 'onlinebanking.techcombank.com.vn/auth/');
+    }
+
+    private function techcombankRedirectUriForAccount(AccountTechcombank $acc): string
+    {
+        return $this->techcombankUsesOnlinebankingAuth($acc)
+            ? 'https://onlinebanking.techcombank.com.vn/redirect'
+            : 'https://onlinebanking.techcombank.com.vn/login';
+    }
+
+    private function techcombankTokenEndpoints(bool $onlinebankingFirst = false): array
+    {
+        $onlinebanking = 'https://onlinebanking.techcombank.com.vn/auth/realms/backbase/protocol/openid-connect/token';
+        $identity = 'https://identity-tcb.techcombank.com.vn/auth/realms/backbase/protocol/openid-connect/token';
+
+        return $onlinebankingFirst ? [$onlinebanking, $identity] : [$identity, $onlinebanking];
     }
 
     private function techcombankSync(AccountTechcombank $acc): void

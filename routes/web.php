@@ -24,7 +24,7 @@ use App\Http\Controllers\PayinController;
 use App\Http\Controllers\CronController;
 use App\Http\Controllers\BankAccountsController;
 use App\Http\Controllers\SuperAdminController;
-use App\Http\Controllers\QuanlySsoBridgeController;
+use App\Http\Controllers\QuanlyAccountLinkController;
 // ----------------------------------------------------------------------
 // Các route public (khách)
 // ----------------------------------------------------------------------
@@ -121,8 +121,8 @@ Route::match(['GET', 'POST'], '/auth/social/{provider}/callback', [SocialAuthCon
     ->where('provider', 'google')
     ->name('auth.social.callback');
 
-Route::get('/auth/bridge/quanly', [QuanlySsoBridgeController::class, 'redirect'])
-    ->name('auth.bridge.quanly');
+Route::get('/auth/quanly/connect', [QuanlyAccountLinkController::class, 'connect'])
+    ->name('auth.quanly.connect');
 
 // Check role=9 => need-activate ...
 Route::view('/auth/need-activate', 'content.authentications.need-activate')

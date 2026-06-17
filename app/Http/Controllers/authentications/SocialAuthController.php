@@ -56,10 +56,6 @@ class SocialAuthController extends Controller
             Auth::login($user, true);
             $request->session()->regenerate();
 
-            if ($redirect = $this->bridgeIntentRedirect($request)) {
-                return $redirect;
-            }
-
             return redirect('/')
                 ->with('success', 'Đăng nhập bằng Google thành công!');
         } catch (Throwable $e) {
@@ -249,18 +245,4 @@ class SocialAuthController extends Controller
         return $redirect;
     }
 
-    private function bridgeIntentRedirect(Request $request): ?RedirectResponse
-    {
-        $intent = trim((string) $request->session()->pull('quanly_sso_bridge_intent', ''));
-        if ($intent === '') {
-            return null;
-        }
-
-        $bridgeUrl = url('/auth/bridge/quanly');
-        if (str_starts_with($intent, $bridgeUrl)) {
-            return redirect($intent);
-        }
-
-        return null;
-    }
 }

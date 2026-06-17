@@ -95,12 +95,10 @@ return [
     'redirect' => env('GOOGLE_REDIRECT_URI', '/auth/social/google/callback'),
   ],
 
-  'quanly_sso' => [
-    'callback_url' => env('QUANLY_SSO_CALLBACK_URL', 'https://quanly.3w.com.vn/auth/apibank/callback'),
-    'return_origin' => env('QUANLY_SSO_RETURN_ORIGIN', 'https://quanly.3w.com.vn'),
-    'secret' => env('APIBANK_SSO_SECRET', ''),
-    'issuer' => env('APIBANK_SSO_ISSUER', 'apibank.com.vn'),
-    'audience' => env('APIBANK_SSO_AUDIENCE', 'quanly.3w.com.vn'),
+  'quanly_account_link' => [
+    'secret' => env('QUANLY_ACCOUNT_LINK_SECRET', ''),
+    'issuer' => env('QUANLY_ACCOUNT_LINK_ISSUER', 'quanly.3w.com.vn'),
+    'audience' => env('QUANLY_ACCOUNT_LINK_AUDIENCE', 'apibank.com.vn'),
   ],
 
 ];

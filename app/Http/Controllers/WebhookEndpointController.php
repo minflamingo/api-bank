@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\WebhookEndpoint;
 use App\Models\WebhookDelivery;
+use App\Models\QuanlyWebhookSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,7 @@ class WebhookEndpointController extends Controller
             'endpoints' => $endpoints,
             'events' => WebhookEndpoint::EVENTS,
             'defaultSecret' => $this->newSecret(),
+            'defaultQuanlySecret' => $this->newSecret(),
             'quanlyIntegration' => $this->quanlyIntegrationStatus(),
         ]);
     }
@@ -68,6 +70,44 @@ class WebhookEndpointController extends Controller
         return redirect()->route('client.webhooks.index')->with('success', 'Đã xoá webhook endpoint.');
     }
 
+    public function updateQuanly(Request $request)
+    {
+        $userId = (int) Auth::id();
+        $existing = QuanlyWebhookSetting::query()->where('user_id', $userId)->first();
+        $active = $request->boolean('quanly_is_active');
+
+        $data = $request->validate([
+            'quanly_url' => [$active ? 'required' : 'nullable', 'url', 'max:2048', 'regex:/^https?:\/\//i'],
+            'quanly_secret' => [$active ? 'required' : 'nullable', 'string', 'min:16', 'max:191'],
+            'quanly_events' => [$active ? 'required' : 'nullable', 'array', 'min:1'],
+            'quanly_events.*' => ['required', Rule::in(WebhookEndpoint::EVENTS)],
+        ], [
+            'quanly_url.required' => 'Vui lòng nhập URL receiver Quanly.',
+            'quanly_secret.required' => 'Vui lòng nhập secret HMAC cho Quanly.',
+            'quanly_events.required' => 'Vui lòng chọn ít nhất một event gửi sang Quanly.',
+            'quanly_events.*.in' => 'Event Quanly webhook không hợp lệ.',
+        ]);
+
+        $events = array_values($data['quanly_events'] ?? ($existing?->events ?: [
+            'transaction.created',
+            'transaction.updated',
+            'balance.updated',
+            'account.session_expired',
+        ]));
+
+        QuanlyWebhookSetting::query()->updateOrCreate(
+            ['user_id' => $userId],
+            [
+                'url' => trim((string) ($data['quanly_url'] ?? '')) ?: null,
+                'secret' => trim((string) ($data['quanly_secret'] ?? '')) ?: ($existing?->secret ?: $this->newSecret()),
+                'events' => $events,
+                'is_active' => $active,
+            ]
+        );
+
+        return redirect()->route('client.webhooks.index')->with('success', 'Đã lưu cấu hình liên kết Quanly cho tài khoản này.');
+    }
+
     private function validated(Request $request): array
     {
         return $request->validate([
@@ -90,12 +130,12 @@ class WebhookEndpointController extends Controller
     private function quanlyIntegrationStatus(): array
     {
         $userId = (int) Auth::id();
-        $url = trim((string) config('services.quanly_webhook.url', ''));
-        $secretConfigured = trim((string) config('services.quanly_webhook.secret', '')) !== '';
-        $events = array_values(array_filter(array_map('trim', explode(',', (string) config(
-            'services.quanly_webhook.events',
-            'transaction.created,transaction.updated,balance.updated,account.session_expired'
-        )))));
+        $setting = QuanlyWebhookSetting::query()
+            ->where('user_id', $userId)
+            ->first();
+        $url = trim((string) ($setting?->url ?? ''));
+        $secretConfigured = trim((string) ($setting?->secret ?? '')) !== '';
+        $events = array_values($setting?->events ?: []);
 
         $deliveryQuery = WebhookDelivery::query()
             ->whereNull('webhook_endpoint_id')
@@ -131,8 +171,10 @@ class WebhookEndpointController extends Controller
             ->first();
 
         return [
-            'enabled' => $url !== '' && $secretConfigured,
+            'setting' => $setting,
+            'enabled' => $setting?->isUsable() ?? false,
             'url' => $url,
+            'secret' => $setting?->secret,
             'secret_configured' => $secretConfigured,
             'events' => $events,
             'links_count' => $linksCount,

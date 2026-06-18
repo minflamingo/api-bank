@@ -156,6 +156,7 @@ Route::middleware(['auth','checkRole:1,2,3'])->group(function () {
     Route::post('/client/upgrade', [PayinController::class, 'upgradeStore'])->name('client.upgrade.store');
     Route::get('/client/webhooks', [WebhookEndpointController::class, 'index'])->name('client.webhooks.index');
     Route::post('/client/webhooks', [WebhookEndpointController::class, 'store'])->name('client.webhooks.store');
+    Route::put('/client/webhooks/quanly', [WebhookEndpointController::class, 'updateQuanly'])->name('client.webhooks.quanly.update');
     Route::put('/client/webhooks/{webhook}', [WebhookEndpointController::class, 'update'])->name('client.webhooks.update');
     Route::delete('/client/webhooks/{webhook}', [WebhookEndpointController::class, 'destroy'])->name('client.webhooks.destroy');
 

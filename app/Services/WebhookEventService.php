@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\WebhookDelivery;
 use App\Models\WebhookEndpoint;
+use App\Models\QuanlyWebhookSetting;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class WebhookEventService
@@ -39,19 +41,23 @@ class WebhookEventService
             $count++;
         }
 
-        $internalUrl = trim((string) config('services.quanly_webhook.url', ''));
-        $internalSecret = trim((string) config('services.quanly_webhook.secret', ''));
-        $internalEvents = array_filter(array_map('trim', explode(',', (string) config('services.quanly_webhook.events', 'transaction.created,transaction.updated,balance.updated,account.session_expired'))));
-        if ($internalUrl !== '' && $internalSecret !== '' && in_array($event, $internalEvents, true)) {
-            $this->createDelivery(
-                endpointId: null,
-                userId: $userId,
-                event: $event,
-                url: $internalUrl,
-                secret: $internalSecret,
-                payload: $basePayload
-            );
-            $count++;
+        if (Schema::hasTable('quanly_webhook_settings')) {
+            $quanlySetting = QuanlyWebhookSetting::query()
+                ->where('user_id', $userId)
+                ->where('is_active', true)
+                ->first();
+
+            if ($quanlySetting?->accepts($event)) {
+                $this->createDelivery(
+                    endpointId: null,
+                    userId: $userId,
+                    event: $event,
+                    url: (string) $quanlySetting->url,
+                    secret: (string) $quanlySetting->secret,
+                    payload: $basePayload
+                );
+                $count++;
+            }
         }
 
         return $count;

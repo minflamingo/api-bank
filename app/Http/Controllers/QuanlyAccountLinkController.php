@@ -180,10 +180,6 @@ class QuanlyAccountLinkController extends Controller
         $requiredEvents = [
             'transaction.created',
             'transaction.updated',
-            'balance.updated',
-            'account.session_expired',
-            'recharge.matched',
-            'recharge.failed',
         ];
         $endpoint = WebhookEndpoint::query()
             ->where('user_id', (int) $user->id)
@@ -198,11 +194,10 @@ class QuanlyAccountLinkController extends Controller
             ]);
         }
 
-        $events = array_values(array_unique(array_merge($endpoint->events ?: [], $requiredEvents)));
         $endpoint->forceFill([
             'name' => $endpoint->name ?: 'Quanly.3W',
             'url' => $url,
-            'events' => $events,
+            'events' => $requiredEvents,
             'secret' => $secret,
             'is_active' => true,
             'last_error' => null,

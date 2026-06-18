@@ -16,7 +16,7 @@ class RechargeScanCommand extends Command
 
     public function handle(): int
     {
-        $sleepSeconds = max(1, min(60, (int) $this->option('sleep')));
+        $fallbackSleepSeconds = max(1, min(60, (int) $this->option('sleep')));
 
         do {
             $loopStartedAt = microtime(true);
@@ -30,6 +30,7 @@ class RechargeScanCommand extends Command
                 break;
             }
 
+            $sleepSeconds = $this->configuredSleepSeconds($fallbackSleepSeconds);
             $remainingMicroseconds = (int) max(0, ($sleepSeconds - (microtime(true) - $loopStartedAt)) * 1000000);
             if ($remainingMicroseconds > 0) {
                 usleep($remainingMicroseconds);
@@ -37,6 +38,23 @@ class RechargeScanCommand extends Command
         } while (true);
 
         return self::SUCCESS;
+    }
+
+    private function configuredSleepSeconds(int $fallbackSleepSeconds): int
+    {
+        try {
+            $bank = Bank::whereIn('receiver_bank_type', ['ACB', 'VCB', 'VPBANK', 'TECHCOMBANK', 'MBBANK'])
+                ->whereNotNull('receiver_account_id')
+                ->orderBy('id')
+                ->first();
+            $seconds = (int) ($bank->recharge_scan_interval_seconds ?? 0);
+
+            return max(1, min(60, $seconds ?: $fallbackSleepSeconds));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $fallbackSleepSeconds;
+        }
     }
 
     private function scanActiveReceiver(): string

@@ -46,5 +46,6 @@ class Bank extends Model
         'instructions',
         'receiver_bank_type',
         'receiver_account_id',
+        'recharge_scan_interval_seconds',
     ];
 }

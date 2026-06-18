@@ -22,6 +22,7 @@ class PayinController extends Controller
     private const DEFAULT_TEMPLATE = 'IRuAFR6';
     private const DEFAULT_MIN_AMOUNT = 10000;
     private const DEFAULT_QUICK_AMOUNTS = '50000,100000,200000,500000,1000000';
+    private const DEFAULT_RECHARGE_SCAN_INTERVAL_SECONDS = 2;
 
     public function index(Request $request)
     {
@@ -140,6 +141,7 @@ class PayinController extends Controller
             'min_amount' => ['nullable', 'integer', 'min:0', 'max:1000000000'],
             'quick_amounts' => ['nullable', 'string', 'max:255'],
             'instructions' => ['nullable', 'string', 'max:1000'],
+            'recharge_scan_interval_seconds' => ['nullable', 'integer', 'min:1', 'max:60'],
         ], [
             'receiver_bank_type.required' => 'Vui lòng chọn ngân hàng nhận nạp.',
             'receiver_bank_type.in' => 'Ngân hàng nhận nạp không hợp lệ.',
@@ -148,6 +150,8 @@ class PayinController extends Controller
             'noidungnap.regex' => 'Nội dung nạp chỉ dùng chữ, số, gạch ngang hoặc gạch dưới.',
             'vietqr_template.regex' => 'Mẫu QR chỉ dùng chữ, số, gạch ngang hoặc gạch dưới.',
             'quick_amounts.max' => 'Danh sách số tiền nhanh quá dài.',
+            'recharge_scan_interval_seconds.min' => 'Chu kỳ quét tối thiểu là 1 giây.',
+            'recharge_scan_interval_seconds.max' => 'Chu kỳ quét tối đa là 60 giây.',
         ]);
 
         $quickAmounts = $this->normaliseQuickAmounts((string) ($validated['quick_amounts'] ?? ''));
@@ -218,6 +222,7 @@ class PayinController extends Controller
             'min_amount' => (int) ($validated['min_amount'] ?? self::DEFAULT_MIN_AMOUNT),
             'quick_amounts' => implode(',', $quickAmounts),
             'instructions' => trim((string) ($validated['instructions'] ?? '')),
+            'recharge_scan_interval_seconds' => (int) ($validated['recharge_scan_interval_seconds'] ?? self::DEFAULT_RECHARGE_SCAN_INTERVAL_SECONDS),
             'receiver_bank_type' => $receiverBankType,
             'receiver_account_id' => (int) $receiverAccount->id,
         ]);
@@ -298,6 +303,7 @@ class PayinController extends Controller
             'min_amount' => (int) ($bank->min_amount ?: self::DEFAULT_MIN_AMOUNT),
             'quick_amounts' => trim((string) ($bank->quick_amounts ?: self::DEFAULT_QUICK_AMOUNTS)),
             'instructions' => trim((string) ($bank->instructions ?? '')),
+            'recharge_scan_interval_seconds' => (int) ($bank->recharge_scan_interval_seconds ?: self::DEFAULT_RECHARGE_SCAN_INTERVAL_SECONDS),
             'receiver_bank_type' => $receiverBankType,
             'receiver_account_id' => (int) $receiverAccount->id,
         ]);
@@ -1348,6 +1354,7 @@ class PayinController extends Controller
             'min_amount' => self::DEFAULT_MIN_AMOUNT,
             'quick_amounts' => self::DEFAULT_QUICK_AMOUNTS,
             'instructions' => '',
+            'recharge_scan_interval_seconds' => self::DEFAULT_RECHARGE_SCAN_INTERVAL_SECONDS,
         ]);
     }
 
@@ -1358,6 +1365,7 @@ class PayinController extends Controller
             'vietqr_template' => self::DEFAULT_TEMPLATE,
             'min_amount' => self::DEFAULT_MIN_AMOUNT,
             'quick_amounts' => self::DEFAULT_QUICK_AMOUNTS,
+            'recharge_scan_interval_seconds' => self::DEFAULT_RECHARGE_SCAN_INTERVAL_SECONDS,
         ] as $field => $default) {
             if ($bank->{$field} === null || $bank->{$field} === '') {
                 $bank->{$field} = $default;

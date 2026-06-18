@@ -424,6 +424,7 @@
       default => !empty($selectedReceiver->sessionId),
   };
   $quickCount = count(array_filter(array_map('trim', explode(',', (string) $quickAmounts))));
+  $scanInterval = (int) old('recharge_scan_interval_seconds', $bank->recharge_scan_interval_seconds ?: 2);
   $tokenBankType = (string) old('receiver_bank_type', $selectedReceiverBankType ?: 'ACB');
   if (!in_array($tokenBankType, ['ACB', 'VCB', 'VPBANK', 'TECHCOMBANK', 'MBBANK'], true)) {
       $tokenBankType = 'ACB';
@@ -466,28 +467,34 @@
   @endif
 
   <div class="row g-3 mb-4">
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl">
       <div class="metric-tile">
         <div class="metric-label">Ngân hàng active</div>
         <div class="metric-value" id="topBank">{{ $selectedReceiverBankType }}</div>
       </div>
     </div>
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl">
       <div class="metric-tile">
         <div class="metric-label">Tài khoản nhận</div>
         <div class="metric-value" id="topAccount">{{ $bank->accountNumber ?: '-' }}</div>
       </div>
     </div>
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl">
       <div class="metric-tile">
         <div class="metric-label">Nội dung mẫu</div>
         <div class="metric-value preview-code" id="topPreview">{{ $prefix }}{{ $exampleUserId }}</div>
       </div>
     </div>
-    <div class="col-6 col-xl-3">
+    <div class="col-6 col-xl">
       <div class="metric-tile">
         <div class="metric-label">Tối thiểu / mốc nhanh</div>
         <div class="metric-value">{{ number_format((int) ($bank->min_amount ?: 10000)) }}đ / {{ $quickCount }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-xl">
+      <div class="metric-tile">
+        <div class="metric-label">Chu kỳ quét</div>
+        <div class="metric-value">{{ $scanInterval }} giây/lần</div>
       </div>
     </div>
   </div>
@@ -670,6 +677,14 @@
               <div class="col-md-6">
                 <label class="form-label" for="quick_amounts">Mốc tiền nhanh</label>
                 <input class="form-control" id="quick_amounts" name="quick_amounts" value="{{ old('quick_amounts', $quickAmounts) }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="recharge_scan_interval_seconds">Chu kỳ quét nạp tiền</label>
+                <div class="input-group">
+                  <input class="form-control" id="recharge_scan_interval_seconds" name="recharge_scan_interval_seconds" type="number" min="1" max="60" value="{{ $scanInterval }}">
+                  <span class="input-group-text">giây</span>
+                </div>
+                <div class="text-muted small mt-1">Worker nền sẽ đọc giá trị này mỗi vòng, không cần sửa systemd.</div>
               </div>
               <div class="col-12">
                 <label class="form-label" for="instructions">Ghi chú</label>

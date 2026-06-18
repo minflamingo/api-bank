@@ -1,4 +1,8 @@
-import $ from 'jquery';
+import jQuery from 'jquery/dist/jquery';
 
-window.$ = $;
-window.jQuery = $;
+const $ = jQuery;
+try {
+  window.jQuery = window.$ = jQuery;
+} catch (e) {}
+
+export { jQuery, $ };

@@ -1,3 +1,7 @@
-import PerfectScrollbar from 'perfect-scrollbar';
+import PerfectScrollbar from 'perfect-scrollbar/dist/perfect-scrollbar';
 
-window.PerfectScrollbar = PerfectScrollbar;
+try {
+  window.PerfectScrollbar = PerfectScrollbar;
+} catch (e) {}
+
+export { PerfectScrollbar };

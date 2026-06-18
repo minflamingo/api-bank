@@ -1,3 +1,7 @@
-import * as bootstrap from 'bootstrap';
+import * as bootstrap from 'bootstrap'
 
-window.bootstrap = bootstrap;
+try {
+  window.bootstrap = bootstrap
+} catch (e) {}
+
+export { bootstrap }

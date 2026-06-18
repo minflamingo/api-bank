@@ -177,7 +177,14 @@ class QuanlyAccountLinkController extends Controller
             return false;
         }
 
-        $requiredEvents = ['transaction.created', 'transaction.updated'];
+        $requiredEvents = [
+            'transaction.created',
+            'transaction.updated',
+            'balance.updated',
+            'account.session_expired',
+            'recharge.matched',
+            'recharge.failed',
+        ];
         $endpoint = WebhookEndpoint::query()
             ->where('user_id', (int) $user->id)
             ->orderBy('id')

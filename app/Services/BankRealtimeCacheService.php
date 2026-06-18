@@ -23,7 +23,12 @@ class BankRealtimeCacheService
     {
         $account = $this->findAccount($bank, $token);
         if (!$account) {
-            return $this->errorResponse($bank, 'Không tìm thấy tài khoản ' . strtoupper($bank) . ' theo token');
+            return $this->accountNotFoundResponse($bank, $token);
+        }
+
+        $inactive = $this->inactiveResponse($account);
+        if ($inactive) {
+            return $inactive;
         }
 
         $expired = $this->expiredResponse($account);
@@ -55,7 +60,12 @@ class BankRealtimeCacheService
     {
         $account = $this->findAccount($bank, $token);
         if (!$account) {
-            return $this->errorResponse($bank, 'Không tìm thấy tài khoản ' . strtoupper($bank) . ' theo token');
+            return $this->accountNotFoundResponse($bank, $token);
+        }
+
+        $inactive = $this->inactiveResponse($account);
+        if ($inactive) {
+            return $inactive;
         }
 
         $expired = $this->expiredResponse($account);
@@ -147,6 +157,8 @@ class BankRealtimeCacheService
             'account_name' => (string) ($model->name ?? ''),
             'login_name' => $login,
             'token' => (string) ($model->token ?? ''),
+            'is_active' => !Schema::hasColumn($model->getTable(), 'is_active') || (int) ($model->is_active ?? 1) === 1,
+            'stopped_at' => $this->modelDate($model, 'stopped_at'),
             'last_synced_at' => $this->modelDate($model, 'last_synced_at'),
             'last_balance' => $this->modelInt($model, 'last_balance'),
             'last_balance_at' => $this->modelDate($model, 'last_balance_at'),
@@ -154,6 +166,49 @@ class BankRealtimeCacheService
             'last_scan_error' => (string) ($model->last_scan_error ?? ''),
             'model' => $model,
         ];
+    }
+
+    private function accountNotFoundResponse(string $bank, string $token): array
+    {
+        $actualBank = $this->tokenBank($token);
+        if ($actualBank && $actualBank !== $this->normalizeBank($bank)) {
+            return $this->errorResponse(
+                $bank,
+                'Token này thuộc ' . $this->bankLabel($actualBank) . ', không phải ' . $this->bankLabel($bank) . '. Vui lòng chọn đúng ngân hàng hoặc dán lại token.',
+                'TOKEN_BANK_MISMATCH',
+                ['actual_bank' => $actualBank, 'requested_bank' => $this->normalizeBank($bank)]
+            );
+        }
+
+        return $this->errorResponse(
+            $bank,
+            'Không tìm thấy tài khoản ' . $this->bankLabel($bank) . ' theo token',
+            'TOKEN_NOT_FOUND'
+        );
+    }
+
+    private function tokenBank(string $token): ?string
+    {
+        $token = trim($token);
+        if ($token === '') {
+            return null;
+        }
+
+        foreach (self::BANKS as $bank) {
+            $query = match ($bank) {
+                'acb' => AccountAcb::query(),
+                'vcb' => AccountVietcombank::query(),
+                'vpbank' => AccountVpbank::query(),
+                'techcombank' => AccountTechcombank::query(),
+                'mbbank' => AccountMbbank::query(),
+            };
+
+            if ($query->where('token', $token)->exists()) {
+                return $bank;
+            }
+        }
+
+        return null;
     }
 
     public function normalizeBank(?string $bank): ?string
@@ -200,6 +255,24 @@ class BankRealtimeCacheService
             'time_end' => (int) ($fresh->time_end ?? 0),
             'renew_url' => url('/client/upgrade'),
         ];
+    }
+
+    private function inactiveResponse(array $account): ?array
+    {
+        if ((bool) ($account['is_active'] ?? true)) {
+            return null;
+        }
+
+        return $this->errorResponse(
+            (string) $account['bank'],
+            'Tài khoản ngân hàng đang tạm dừng. Vui lòng kích hoạt lại hoặc cập nhật phiên/token mới.',
+            'ACCOUNT_INACTIVE',
+            [
+                'account_no' => (string) $account['account_no'],
+                'stopped_at' => $account['stopped_at'] ?? null,
+                'last_synced_at' => $account['last_synced_at'] ?? null,
+            ]
+        );
     }
 
     private function sqlTransactions(array $account, int $limit): array
@@ -304,6 +377,7 @@ class BankRealtimeCacheService
             'bank' => (string) $account['bank'],
             'account_no' => (string) $account['account_no'],
             'token_hash' => $this->tokenHash((string) $account['token']),
+            'is_active' => (bool) ($account['is_active'] ?? true),
             'last_synced_at' => $last,
             'stale_seconds' => $stale,
             'is_stale' => $stale > (int) config('services.realtime_cache.stale_after_seconds', 90),
@@ -340,16 +414,29 @@ class BankRealtimeCacheService
         }
     }
 
-    private function errorResponse(string $bank, string $message): array
+    private function errorResponse(string $bank, string $message, string $code = 'BANK_ACCOUNT_ERROR', array $extra = []): array
     {
-        return [
+        return array_merge([
             'ok' => false,
             'status' => 'false',
+            'code' => $code,
             'source' => 'none',
             'msg' => $message,
             'transactions' => [],
             'data' => $this->normalizeBank($bank) === 'acb' ? [] : ['transactions' => []],
-        ];
+        ], $extra);
+    }
+
+    private function bankLabel(?string $bank): string
+    {
+        return match ($this->normalizeBank($bank)) {
+            'acb' => 'ACB',
+            'vcb' => 'Vietcombank',
+            'vpbank' => 'VPBank',
+            'techcombank' => 'Techcombank',
+            'mbbank' => 'MBBank',
+            default => strtoupper((string) $bank),
+        };
     }
 
     private function modelDate(Model $model, string $field): ?string

@@ -195,6 +195,9 @@ Route::middleware(['auth','checkRole:1,2,3'])->group(function () {
     Route::post('/bank-accounts/{bank}/{id}/token', [BankAccountsController::class, 'token'])
          ->where(['bank' => 'acb|vcb|vpbank|techcombank|mbbank', 'id' => '[0-9]+'])
          ->name('bank.accounts.token');
+    Route::patch('/bank-accounts/{bank}/{id}/status', [BankAccountsController::class, 'status'])
+         ->where(['bank' => 'acb|vcb|vpbank|techcombank|mbbank', 'id' => '[0-9]+'])
+         ->name('bank.accounts.status');
     Route::delete('/bank-accounts/{bank}/{id}', [BankAccountsController::class, 'destroy'])
          ->where(['bank' => 'acb|vcb|vpbank|techcombank|mbbank', 'id' => '[0-9]+'])
          ->name('bank.accounts.destroy');

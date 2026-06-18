@@ -198,6 +198,18 @@
     </div>
     <div class="col-6 col-md-4 col-xl">
       <div class="summary-tile">
+        <div class="summary-label">Đang chạy</div>
+        <div class="summary-value text-success">{{ number_format($stats['active'] ?? 0) }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="summary-tile">
+        <div class="summary-label">Tạm dừng</div>
+        <div class="summary-value text-secondary">{{ number_format($stats['inactive'] ?? 0) }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl">
+      <div class="summary-tile">
         <div class="summary-label">Vietcombank</div>
         <div class="summary-value">{{ number_format($stats['vcb']) }}</div>
       </div>
@@ -284,6 +296,7 @@
             <th>Đăng nhập</th>
             <th>Số dư</th>
             <th>Token</th>
+            <th>Trạng thái</th>
             <th>Ngày thêm</th>
             <th class="text-end">Thao tác</th>
           </tr>
@@ -303,6 +316,9 @@
                 </div>
               </td>
               <td><span class="token-mask">{{ $maskToken($account->token) }}</span></td>
+              <td>
+                <span class="badge bg-label-{{ $account->status_badge_class }}">{{ $account->status_text }}</span>
+              </td>
               <td>{{ $account->created_text }}</td>
               <td class="text-end">
                 <div class="d-inline-flex flex-wrap justify-content-end gap-1">
@@ -315,6 +331,13 @@
                   <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-token-url="{{ $account->token_url }}">
                     <i class="bx bx-code-alt"></i> API
                   </button>
+                  <button class="btn btn-sm btn-outline-{{ $account->is_active ? 'warning' : 'success' }} btn-touch"
+                          type="button"
+                          data-status-url="{{ $account->status_url }}"
+                          data-status-active="{{ $account->is_active ? '0' : '1' }}">
+                    <i class="bx bx-{{ $account->is_active ? 'pause-circle' : 'play-circle' }}"></i>
+                    {{ $account->is_active ? 'Dừng' : 'Bật' }}
+                  </button>
                   <button class="btn btn-sm btn-outline-danger btn-touch" type="button" data-delete-url="{{ $account->delete_url }}">
                     <i class="bx bx-trash"></i>
                   </button>
@@ -323,7 +346,7 @@
             </tr>
           @empty
             <tr>
-              <td colspan="8" class="text-center py-5">
+              <td colspan="9" class="text-center py-5">
                 <div class="mb-2"><i class="bx bx-credit-card fs-1 text-muted"></i></div>
                 <div class="fw-semibold">Chưa có tài khoản ngân hàng</div>
                 <div class="text-muted mb-3">Kết nối ACB, Vietcombank, VPBank, Techcombank hoặc MBBank để lấy API số dư và giao dịch.</div>
@@ -365,6 +388,10 @@
               <div>{{ $account->created_text }}</div>
             </div>
             <div class="mobile-meta-item">
+              <div class="small text-muted">Trạng thái</div>
+              <div><span class="badge bg-label-{{ $account->status_badge_class }}">{{ $account->status_text }}</span></div>
+            </div>
+            <div class="mobile-meta-item">
               <div class="small text-muted">Ngân hàng</div>
               <div>{{ $account->bank_label }}</div>
             </div>
@@ -378,6 +405,13 @@
             </a>
             <button class="btn btn-outline-primary btn-touch" type="button" data-token-url="{{ $account->token_url }}">
               <i class="bx bx-code-alt"></i> Lấy API
+            </button>
+            <button class="btn btn-outline-{{ $account->is_active ? 'warning' : 'success' }} btn-touch"
+                    type="button"
+                    data-status-url="{{ $account->status_url }}"
+                    data-status-active="{{ $account->is_active ? '0' : '1' }}">
+              <i class="bx bx-{{ $account->is_active ? 'pause-circle' : 'play-circle' }}"></i>
+              {{ $account->is_active ? 'Tạm dừng' : 'Kích hoạt lại' }}
             </button>
             <button class="btn btn-outline-danger btn-touch" type="button" data-delete-url="{{ $account->delete_url }}">
               <i class="bx bx-trash"></i> Xóa tài khoản
@@ -494,7 +528,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const deleteBtn = event.target.closest('[data-delete-url]');
     if (deleteBtn) {
-      if (!confirm('Xóa tài khoản ngân hàng này?')) return;
+      if (!confirm('Xóa tài khoản này? Nếu tài khoản đã có lịch sử giao dịch, hệ thống sẽ chỉ tạm dừng để giữ dữ liệu bank.')) return;
       deleteBtn.disabled = true;
 
       postJson(deleteBtn.dataset.deleteUrl, { method: 'DELETE' })
@@ -505,6 +539,24 @@ document.addEventListener('DOMContentLoaded', function () {
         .catch(data => {
           deleteBtn.disabled = false;
           alert(data.msg || data.message || 'Không xóa được tài khoản.');
+        });
+      return;
+    }
+
+    const statusBtn = event.target.closest('[data-status-url]');
+    if (statusBtn) {
+      const activate = statusBtn.dataset.statusActive === '1';
+      if (!confirm(activate ? 'Kích hoạt lại tài khoản ngân hàng này?' : 'Tạm dừng tài khoản này? Scanner, webhook và API sẽ ngừng dùng phiên này.')) return;
+      statusBtn.disabled = true;
+
+      postJson(statusBtn.dataset.statusUrl, { method: 'PATCH', body: { is_active: activate ? 1 : 0 } })
+        .then(data => {
+          alert(data.msg || (activate ? 'Đã kích hoạt lại.' : 'Đã tạm dừng.'));
+          window.location.reload();
+        })
+        .catch(data => {
+          statusBtn.disabled = false;
+          alert(data.msg || data.message || 'Không cập nhật được trạng thái tài khoản.');
         });
       return;
     }

@@ -122,6 +122,9 @@ class BankRealtimeScannerService
 
         $table = $query->getModel()->getTable();
         $query->whereNotNull('token')->where('token', '<>', '');
+        if (Schema::hasColumn($table, 'is_active')) {
+            $query->where('is_active', 1);
+        }
         if (Schema::hasColumn($table, 'next_scan_at')) {
             $query->where(function ($query) {
                 $query->whereNull('next_scan_at')->orWhere('next_scan_at', '<=', now());

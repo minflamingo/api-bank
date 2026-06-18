@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\WebhookEndpoint;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,13 +20,16 @@ class QuanlyAccountLinkController extends Controller
         try {
             $payload = $this->verifiedPayload($request);
             $user = $this->findOrCreateLinkedUser($request, $payload);
+            $webhookReady = $this->ensureQuanlyWebhookEndpoint($user);
 
             Auth::login($user, true);
             $request->session()->regenerate();
 
             return redirect()
                 ->to(route('bank.accounts.create', ['bank' => $this->payloadBank($payload)]))
-                ->with('success', 'Đã liên kết tài khoản Quanly với APIBank.');
+                ->with('success', $webhookReady
+                    ? 'Đã liên kết tài khoản Quanly với APIBank và tạo webhook Quanly.'
+                    : 'Đã liên kết tài khoản Quanly với APIBank.');
         } catch (\Throwable $e) {
             report($e);
 
@@ -163,6 +167,41 @@ class QuanlyAccountLinkController extends Controller
 
             return $user->fresh();
         });
+    }
+
+    private function ensureQuanlyWebhookEndpoint(User $user): bool
+    {
+        $url = trim((string) config('services.webhook_integrations.quanly_url', 'https://quanly.3w.com.vn/webhooks/apibank/transactions'));
+        $secret = trim((string) config('services.webhook_integrations.quanly_secret', ''));
+        if ((int) $user->id <= 0 || $url === '' || $secret === '') {
+            return false;
+        }
+
+        $requiredEvents = ['transaction.created', 'transaction.updated'];
+        $endpoint = WebhookEndpoint::query()
+            ->where('user_id', (int) $user->id)
+            ->where('url', $url)
+            ->orderBy('id')
+            ->first();
+
+        if (!$endpoint) {
+            $endpoint = new WebhookEndpoint([
+                'user_id' => (int) $user->id,
+                'url' => $url,
+            ]);
+        }
+
+        $events = array_values(array_unique(array_merge($endpoint->events ?: [], $requiredEvents)));
+        $endpoint->forceFill([
+            'name' => $endpoint->name ?: 'Quanly.3W',
+            'url' => $url,
+            'events' => $events,
+            'secret' => $secret,
+            'is_active' => true,
+            'last_error' => null,
+        ])->save();
+
+        return true;
     }
 
     private function payloadBank(array $payload): string

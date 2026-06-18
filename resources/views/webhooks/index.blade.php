@@ -42,10 +42,6 @@
             <input class="form-control" name="url" value="{{ old('url') }}" placeholder="https://example.com/webhooks/apibank" required>
           </div>
           <div>
-            <label class="form-label">Secret ký HMAC</label>
-            <input class="form-control font-monospace" name="secret" value="{{ old('secret', $defaultSecret) }}" required>
-          </div>
-          <div>
             <label class="form-label d-block">Event</label>
             <div class="row g-2">
               @foreach($events as $event)
@@ -88,7 +84,6 @@
                 <td>
                   <div class="fw-semibold">{{ $endpoint->name }}</div>
                   <div class="text-muted small text-break">{{ $endpoint->url }}</div>
-                  <div class="font-monospace small text-muted text-break">{{ $endpoint->secret }}</div>
                 </td>
                 <td>
                   <div class="d-flex flex-wrap gap-1">
@@ -126,10 +121,6 @@
                     <div class="col-md-8">
                       <label class="form-label">URL</label>
                       <input class="form-control" name="url" value="{{ $endpoint->url }}" required>
-                    </div>
-                    <div class="col-12">
-                      <label class="form-label">Secret</label>
-                      <input class="form-control font-monospace" name="secret" value="{{ $endpoint->secret }}" required>
                     </div>
                     <div class="col-12">
                       <div class="row g-2">

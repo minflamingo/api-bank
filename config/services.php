@@ -94,6 +94,11 @@ return [
     'stale_after_seconds' => (int) env('APIBANK_STALE_AFTER_SECONDS', 90),
   ],
 
+  'webhook_integrations' => [
+    'quanly_url' => env('QUANLY_WEBHOOK_URL', 'https://quanly.3w.com.vn/webhooks/apibank/transactions'),
+    'quanly_secret' => env('QUANLY_WEBHOOK_SECRET', ''),
+  ],
+
   'google' => [
     'client_id' => env('GOOGLE_CLIENT_ID', ''),
     'client_secret' => env('GOOGLE_CLIENT_SECRET', ''),

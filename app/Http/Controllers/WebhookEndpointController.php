@@ -20,7 +20,6 @@ class WebhookEndpointController extends Controller
         return view('webhooks.index', [
             'endpoints' => $endpoints,
             'events' => WebhookEndpoint::EVENTS,
-            'defaultSecret' => $this->newSecret(),
         ]);
     }
 
@@ -33,7 +32,7 @@ class WebhookEndpointController extends Controller
             'name' => $data['name'],
             'url' => $data['url'],
             'events' => array_values($data['events']),
-            'secret' => trim((string) ($data['secret'] ?? '')) ?: $this->newSecret(),
+            'secret' => $this->secretForWebhookUrl($data['url']),
             'is_active' => $request->boolean('is_active', true),
         ]);
 
@@ -49,7 +48,7 @@ class WebhookEndpointController extends Controller
             'name' => $data['name'],
             'url' => $data['url'],
             'events' => array_values($data['events']),
-            'secret' => trim((string) ($data['secret'] ?? '')) ?: $webhook->secret,
+            'secret' => $this->secretForWebhookUrl($data['url'], $webhook->secret ?: null),
             'is_active' => $request->boolean('is_active'),
         ])->save();
 
@@ -69,7 +68,6 @@ class WebhookEndpointController extends Controller
         return $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'url' => ['required', 'url', 'max:2048', 'regex:/^https?:\/\//i'],
-            'secret' => ['nullable', 'string', 'min:16', 'max:191'],
             'events' => ['required', 'array', 'min:1'],
             'events.*' => ['required', Rule::in(WebhookEndpoint::EVENTS)],
         ], [
@@ -81,5 +79,30 @@ class WebhookEndpointController extends Controller
     private function newSecret(): string
     {
         return 'whsec_' . Str::random(48);
+    }
+
+    private function secretForWebhookUrl(string $url, ?string $existingSecret = null): string
+    {
+        $quanlySecret = trim((string) config('services.webhook_integrations.quanly_secret', ''));
+        $quanlyUrl = trim((string) config('services.webhook_integrations.quanly_url', 'https://quanly.3w.com.vn/webhooks/apibank/transactions'));
+
+        if ($quanlySecret !== '' && $this->sameWebhookTarget($url, $quanlyUrl)) {
+            return $quanlySecret;
+        }
+
+        return $existingSecret ?: $this->newSecret();
+    }
+
+    private function sameWebhookTarget(string $left, string $right): bool
+    {
+        $normalize = static function (string $value): ?string {
+            $parts = parse_url(trim($value));
+            $host = strtolower((string) ($parts['host'] ?? ''));
+            $path = '/' . trim((string) ($parts['path'] ?? ''), '/');
+
+            return $host !== '' ? ($host . $path) : null;
+        };
+
+        return $normalize($left) !== null && $normalize($left) === $normalize($right);
     }
 }

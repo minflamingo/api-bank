@@ -3,8 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\WebhookEndpoint;
+use App\Models\WebhookDelivery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -21,6 +24,7 @@ class WebhookEndpointController extends Controller
             'endpoints' => $endpoints,
             'events' => WebhookEndpoint::EVENTS,
             'defaultSecret' => $this->newSecret(),
+            'quanlyIntegration' => $this->quanlyIntegrationStatus(),
         ]);
     }
 
@@ -81,5 +85,63 @@ class WebhookEndpointController extends Controller
     private function newSecret(): string
     {
         return 'whsec_' . Str::random(48);
+    }
+
+    private function quanlyIntegrationStatus(): array
+    {
+        $userId = (int) Auth::id();
+        $url = trim((string) config('services.quanly_webhook.url', ''));
+        $secretConfigured = trim((string) config('services.quanly_webhook.secret', '')) !== '';
+        $events = array_values(array_filter(array_map('trim', explode(',', (string) config(
+            'services.quanly_webhook.events',
+            'transaction.created,transaction.updated,balance.updated,account.session_expired'
+        )))));
+
+        $deliveryQuery = WebhookDelivery::query()
+            ->whereNull('webhook_endpoint_id')
+            ->where('user_id', $userId);
+
+        $link = null;
+        $linksCount = 0;
+        if (Schema::hasTable('quanly_account_links')) {
+            $linksCount = (int) DB::table('quanly_account_links')
+                ->where('apibank_user_id', $userId)
+                ->count();
+
+            $link = DB::table('quanly_account_links')
+                ->where('apibank_user_id', $userId)
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        $lastDelivery = (clone $deliveryQuery)
+            ->select([
+                'event',
+                'event_id',
+                'target_url',
+                'attempts',
+                'response_status',
+                'delivered_at',
+                'failed_at',
+                'last_error',
+                'created_at',
+                'updated_at',
+            ])
+            ->orderByDesc('id')
+            ->first();
+
+        return [
+            'enabled' => $url !== '' && $secretConfigured,
+            'url' => $url,
+            'secret_configured' => $secretConfigured,
+            'events' => $events,
+            'links_count' => $linksCount,
+            'link' => $link,
+            'deliveries_total' => (clone $deliveryQuery)->count(),
+            'deliveries_delivered' => (clone $deliveryQuery)->whereNotNull('delivered_at')->count(),
+            'deliveries_failed' => (clone $deliveryQuery)->whereNotNull('failed_at')->count(),
+            'deliveries_pending' => (clone $deliveryQuery)->whereNull('delivered_at')->whereNull('failed_at')->count(),
+            'last_delivery' => $lastDelivery,
+        ];
     }
 }

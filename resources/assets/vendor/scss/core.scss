@@ -1,0 +1,15 @@
+@import "bootstrap/scss/bootstrap";
+
+body {
+  min-height: 100vh;
+}
+
+.layout-wrapper,
+.layout-container,
+.layout-page {
+  min-height: 100vh;
+}
+
+.menu-link {
+  text-decoration: none;
+}

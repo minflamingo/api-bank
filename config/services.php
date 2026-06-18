@@ -94,12 +94,6 @@ return [
     'stale_after_seconds' => (int) env('APIBANK_STALE_AFTER_SECONDS', 90),
   ],
 
-  'quanly_webhook' => [
-    'url' => env('QUANLY_WEBHOOK_URL', ''),
-    'secret' => env('QUANLY_WEBHOOK_SECRET', ''),
-    'events' => env('QUANLY_WEBHOOK_EVENTS', 'transaction.created,transaction.updated,balance.updated,account.session_expired'),
-  ],
-
   'google' => [
     'client_id' => env('GOOGLE_CLIENT_ID', ''),
     'client_secret' => env('GOOGLE_CLIENT_SECRET', ''),

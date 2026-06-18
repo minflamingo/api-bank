@@ -4,8 +4,6 @@ namespace App\Services;
 
 use App\Models\WebhookDelivery;
 use App\Models\WebhookEndpoint;
-use App\Models\QuanlyWebhookSetting;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class WebhookEventService
@@ -39,25 +37,6 @@ class WebhookEventService
                 payload: $basePayload
             );
             $count++;
-        }
-
-        if (Schema::hasTable('quanly_webhook_settings')) {
-            $quanlySetting = QuanlyWebhookSetting::query()
-                ->where('user_id', $userId)
-                ->where('is_active', true)
-                ->first();
-
-            if ($quanlySetting?->accepts($event)) {
-                $this->createDelivery(
-                    endpointId: null,
-                    userId: $userId,
-                    event: $event,
-                    url: (string) $quanlySetting->url,
-                    secret: (string) $quanlySetting->secret,
-                    payload: $basePayload
-                );
-                $count++;
-            }
         }
 
         return $count;

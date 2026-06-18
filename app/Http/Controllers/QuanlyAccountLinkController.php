@@ -7,7 +7,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -162,55 +161,8 @@ class QuanlyAccountLinkController extends Controller
                 ]
             );
 
-            $this->ensureQuanlyWebhookSetting((int) $user->id);
-
             return $user->fresh();
         });
-    }
-
-    private function ensureQuanlyWebhookSetting(int $userId): void
-    {
-        if ($userId <= 0 || !Schema::hasTable('quanly_webhook_settings')) {
-            return;
-        }
-
-        $exists = DB::table('quanly_webhook_settings')->where('user_id', $userId)->exists();
-        if ($exists) {
-            return;
-        }
-
-        $url = trim((string) config('services.quanly_webhook.url', ''));
-        $secret = trim((string) config('services.quanly_webhook.secret', ''));
-        if ($url === '' || $secret === '') {
-            return;
-        }
-
-        $events = array_values(array_intersect(array_filter(array_map('trim', explode(',', (string) config(
-            'services.quanly_webhook.events',
-            'transaction.created,transaction.updated,balance.updated,account.session_expired'
-        )))), [
-            'transaction.created',
-            'transaction.updated',
-            'balance.updated',
-            'account.session_expired',
-            'recharge.matched',
-            'recharge.failed',
-        ]));
-
-        DB::table('quanly_webhook_settings')->insert([
-            'user_id' => $userId,
-            'url' => $url,
-            'secret' => $secret,
-            'events' => json_encode($events ?: [
-                'transaction.created',
-                'transaction.updated',
-                'balance.updated',
-                'account.session_expired',
-            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
     }
 
     private function payloadBank(array $payload): string

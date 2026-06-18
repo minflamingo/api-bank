@@ -114,9 +114,6 @@ class PayinController extends Controller
         $vpbankReceiverAccounts = $this->vpbankReceiverAccounts($bank);
         $techcombankReceiverAccounts = $this->techcombankReceiverAccounts($bank);
         $mbbankReceiverAccounts = $this->mbbankReceiverAccounts($bank);
-        $pendingVcb = (array) session('bank_accounts_vcb_pending', []);
-        $pendingVpbank = (array) session('bank_accounts_vpbank_pending', []);
-        $pendingTechcombank = (array) session('bank_accounts_techcombank_pending', []);
 
         return view('admin.recharge-settings', compact(
             'bank',
@@ -127,10 +124,7 @@ class PayinController extends Controller
             'techcombankReceiverAccounts',
             'mbbankReceiverAccounts',
             'selectedReceiverBankType',
-            'selectedReceiverAccountId',
-            'pendingVcb',
-            'pendingVpbank',
-            'pendingTechcombank'
+            'selectedReceiverAccountId'
         ));
     }
 
@@ -240,6 +234,88 @@ class PayinController extends Controller
         ]);
 
         return back()->with('success', 'Đã lưu cấu hình nạp tiền ' . $receiverBankType . '.');
+    }
+
+    public function updateReceiverToken(Request $request)
+    {
+        abort_unless($this->isSuperAdmin(), 403);
+
+        $validated = $request->validate([
+            'receiver_bank_type' => ['required', 'in:ACB,VCB,VPBANK,TECHCOMBANK,MBBANK'],
+            'receiver_token' => ['required', 'string', 'max:4096'],
+        ], [
+            'receiver_bank_type.required' => 'Vui lòng chọn ngân hàng nhận nạp.',
+            'receiver_bank_type.in' => 'Ngân hàng nhận nạp không hợp lệ.',
+            'receiver_token.required' => 'Vui lòng dán token API ngân hàng.',
+            'receiver_token.max' => 'Token quá dài.',
+        ]);
+
+        $receiverBankType = (string) $validated['receiver_bank_type'];
+        $receiverToken = trim((string) $validated['receiver_token']);
+        $receiverAccount = $this->receiverAccountByToken($receiverBankType, $receiverToken);
+
+        if (!$receiverAccount) {
+            return back()
+                ->withErrors(['receiver_token' => 'Không tìm thấy token này trong account ' . $this->bankLabel($receiverBankType) . '.'])
+                ->withInput();
+        }
+
+        if (!is_null($receiverAccount->user_id)) {
+            return back()
+                ->withErrors(['receiver_token' => 'Token này thuộc account khách hàng, không dùng làm tài khoản nhận nạp hệ thống. Hãy dùng token account hệ thống của Super Admin.'])
+                ->withInput();
+        }
+
+        $receiverAccountNumber = $this->receiverAccountNumber($receiverBankType, $receiverAccount);
+        if ($receiverAccountNumber === '') {
+            return back()
+                ->withErrors(['receiver_token' => 'Account tìm thấy chưa có số tài khoản nhận.'])
+                ->withInput();
+        }
+
+        $sessionField = $this->receiverSessionField($receiverBankType);
+        if ($receiverBankType === 'TECHCOMBANK' && empty($receiverAccount->{$sessionField})) {
+            return back()
+                ->withErrors(['receiver_token' => 'Token Techcombank này chưa có refresh token, cần xác nhận app trước khi dùng nhận nạp.'])
+                ->withInput();
+        }
+        if (empty($receiverAccount->{$sessionField}) && empty($receiverAccount->password)) {
+            return back()
+                ->withErrors(['receiver_token' => 'Account của token này chưa có session hoặc mật khẩu để cron đăng nhập lại.'])
+                ->withInput();
+        }
+
+        $bank = $this->receiverRechargeBank($receiverBankType);
+        $displayName = $this->receiverAccountName($receiverAccount) ?: ($this->bankLabel($receiverBankType) . ' RECEIVER');
+        $bank->fill([
+            'short_name' => $this->bankLabel($receiverBankType),
+            'image' => $bank->image ?: $this->bankImage($receiverBankType),
+            'accountNumber' => $receiverAccountNumber,
+            'accountName' => $displayName,
+            'codebank' => $this->bankBin($receiverBankType),
+            'noidungnap' => trim((string) ($bank->noidungnap ?: 'NAP3W')),
+            'vietqr_template' => trim((string) ($bank->vietqr_template ?: self::DEFAULT_TEMPLATE)),
+            'min_amount' => (int) ($bank->min_amount ?: self::DEFAULT_MIN_AMOUNT),
+            'quick_amounts' => trim((string) ($bank->quick_amounts ?: self::DEFAULT_QUICK_AMOUNTS)),
+            'instructions' => trim((string) ($bank->instructions ?? '')),
+            'receiver_bank_type' => $receiverBankType,
+            'receiver_account_id' => (int) $receiverAccount->id,
+        ]);
+        $bank->save();
+        $this->deactivateOtherReceiverBanks((string) $bank->codebank);
+
+        DB::table('xlogs')->insert([
+            'ip' => request()->ip(),
+            'user' => Auth::id(),
+            'log' => 'Cập nhật token nhận nạp hệ thống',
+            'notes' => $receiverBankType . ' #' . $receiverAccount->id . ' | STK ' . $receiverAccountNumber,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return redirect()
+            ->to(route('admin.recharge-settings.edit', ['tab' => 'accounts']) . '#accounts')
+            ->with('success', 'Đã chọn token ' . $this->bankLabel($receiverBankType) . ' làm tài khoản nhận nạp.');
     }
 
     public function storeReceiverAcbAccount(Request $request)
@@ -1210,6 +1286,17 @@ class PayinController extends Controller
         ]);
     }
 
+    private function receiverRechargeBank(string $type): Bank
+    {
+        return match ($type) {
+            'VCB' => $this->vcbRechargeBank(),
+            'VPBANK' => $this->vpbankRechargeBank(),
+            'TECHCOMBANK' => $this->techcombankRechargeBank(),
+            'MBBANK' => $this->mbbankRechargeBank(),
+            default => $this->acbRechargeBank(),
+        };
+    }
+
     private function bankBin(string $type): string
     {
         return match ($type) {
@@ -1974,6 +2061,13 @@ class PayinController extends Controller
             ->first();
     }
 
+    private function receiverAccountByToken(string $type, string $token)
+    {
+        return DB::table($this->receiverAccountTable($type))
+            ->where('token', $token)
+            ->first();
+    }
+
     private function receiverAccountNumber(string $type, $account): string
     {
         return trim((string) match ($type) {
@@ -1985,6 +2079,17 @@ class PayinController extends Controller
     private function receiverAccountName($account): string
     {
         return trim((string) ($account->name ?? ''));
+    }
+
+    private function receiverSessionField(string $type): string
+    {
+        return match ($type) {
+            'VCB' => 'session_id',
+            'VPBANK' => 'token_key',
+            'TECHCOMBANK' => 'refresh_token',
+            'MBBANK' => 'session_id',
+            default => 'sessionId',
+        };
     }
 
     private function validateReceiverAccountUpdate(Request $request, string $type): array

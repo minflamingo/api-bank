@@ -424,21 +424,14 @@
       default => !empty($selectedReceiver->sessionId),
   };
   $quickCount = count(array_filter(array_map('trim', explode(',', (string) $quickAmounts))));
-  $pendingVcb = $pendingVcb ?? [];
-  $pendingVpbank = $pendingVpbank ?? [];
-  $pendingTechcombank = $pendingTechcombank ?? [];
-  $requestBank = in_array((string) request('bank'), ['acb', 'vcb', 'vpbank', 'techcombank', 'mbbank'], true) ? (string) request('bank') : null;
-  $oldBankCode = in_array((string) old('bank_code'), ['acb', 'vcb', 'vpbank', 'techcombank', 'mbbank'], true) ? (string) old('bank_code') : null;
-  $addBankType = $requestBank
-      ?: ($oldBankCode
-      ?: (!empty($pendingTechcombank)
-      ? 'techcombank'
-      : (!empty($pendingVpbank)
-      ? 'vpbank'
-      : (!empty($pendingVcb) ? 'vcb' : 'acb'))));
+  $tokenBankType = (string) old('receiver_bank_type', $selectedReceiverBankType ?: 'ACB');
+  if (!in_array($tokenBankType, ['ACB', 'VCB', 'VPBANK', 'TECHCOMBANK', 'MBBANK'], true)) {
+      $tokenBankType = 'ACB';
+  }
+  $selectedReceiverToken = (string) old('receiver_token', $selectedReceiver->token ?? '');
   $activeRechargeTab = request('tab');
   if (!in_array($activeRechargeTab, ['settings', 'accounts', 'add'], true)) {
-      $activeRechargeTab = (!empty($pendingVcb) || !empty($pendingVpbank) || !empty($pendingTechcombank) || old('bank_code')) ? 'add' : 'settings';
+      $activeRechargeTab = old('receiver_token_form') ? 'add' : 'settings';
   }
 @endphp
 
@@ -705,7 +698,7 @@
             <div class="text-muted small">ACB: {{ number_format($acbReceiverAccounts->count()) }} · VCB: {{ number_format($vcbReceiverAccounts->count()) }} · VPBank: {{ number_format($vpbankReceiverAccounts->count()) }} · Techcombank: {{ number_format($techcombankReceiverAccounts->count()) }} · MBBank: {{ number_format($mbbankReceiverAccounts->count()) }}</div>
           </div>
           <button class="btn btn-outline-primary btn-touch align-self-sm-start" type="button" data-recharge-tab-jump="add">
-            <i class="bx bx-plus"></i> Thêm account
+            <i class="bx bx-key"></i> Thêm token
           </button>
         </div>
         <div class="panel-body">
@@ -724,8 +717,8 @@
                     @endif
                     <span class="status-chip {{ $account->sessionId ? 'status-ok' : 'status-warn' }}">{{ $account->sessionId ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank="acb" data-username="{{ $account->phone }}" data-account-no="{{ $account->stk }}">
-                        <i class="bx bx-edit"></i> Sửa
+                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank-type="ACB" data-token="{{ $account->token }}">
+                        <i class="bx bx-key"></i> Sửa token
                       </button>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'acb', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
@@ -783,8 +776,8 @@
                     @endif
                     <span class="status-chip {{ $account->session_id ? 'status-ok' : 'status-warn' }}">{{ $account->session_id ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank="vcb" data-username="{{ $account->username }}" data-account-no="{{ $account->account }}">
-                        <i class="bx bx-edit"></i> Sửa
+                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank-type="VCB" data-token="{{ $account->token }}">
+                        <i class="bx bx-key"></i> Sửa token
                       </button>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'vcb', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
@@ -842,8 +835,8 @@
                     @endif
                     <span class="status-chip {{ $account->token_key ? 'status-ok' : 'status-warn' }}">{{ $account->token_key ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank="vpbank" data-username="{{ $account->username }}" data-account-no="{{ $account->account }}">
-                        <i class="bx bx-edit"></i> Sửa
+                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank-type="VPBANK" data-token="{{ $account->token }}">
+                        <i class="bx bx-key"></i> Sửa token
                       </button>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'vpbank', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
@@ -901,8 +894,8 @@
                     @endif
                     <span class="status-chip {{ $account->refresh_token ? 'status-ok' : 'status-warn' }}">{{ $account->refresh_token ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank="techcombank" data-username="{{ $account->username }}" data-account-no="{{ $account->account }}">
-                        <i class="bx bx-edit"></i> Sửa
+                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank-type="TECHCOMBANK" data-token="{{ $account->token }}">
+                        <i class="bx bx-key"></i> Sửa token
                       </button>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'techcombank', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
@@ -960,8 +953,8 @@
                     @endif
                     <span class="status-chip {{ $account->session_id ? 'status-ok' : 'status-warn' }}">{{ $account->session_id ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank="mbbank" data-username="{{ $account->username }}" data-account-no="{{ $account->account }}">
-                        <i class="bx bx-edit"></i> Sửa
+                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-inline-token-edit data-bank-type="MBBANK" data-token="{{ $account->token }}">
+                        <i class="bx bx-key"></i> Sửa token
                       </button>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'mbbank', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
@@ -1007,10 +1000,10 @@
             @endforeach
             @if($acbReceiverAccounts->isEmpty() && $vcbReceiverAccounts->isEmpty() && $vpbankReceiverAccounts->isEmpty() && $techcombankReceiverAccounts->isEmpty() && $mbbankReceiverAccounts->isEmpty())
               <div class="text-center text-muted py-4">
-                Chưa có account hệ thống.
+                Chưa có token account hệ thống.
                 <div class="mt-3">
                   <button class="btn btn-primary btn-touch" type="button" data-recharge-tab-jump="add">
-                    <i class="bx bx-plus"></i> Thêm account nhận nạp
+                    <i class="bx bx-key"></i> Thêm token nhận nạp
                   </button>
                 </div>
               </div>
@@ -1028,390 +1021,100 @@
               <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mb-4">
                 <div>
                   <div class="text-muted small mb-1">Super Admin</div>
-                  <h5 class="mb-1">Kết nối tài khoản nhận nạp</h5>
-                  <div class="text-muted small">Thêm account hệ thống để quét giao dịch tự động.</div>
+                  <h5 class="mb-1">Thêm hoặc sửa token nhận nạp</h5>
+                  <div class="text-muted small">Dán token API của account hệ thống đã có trong danh sách bank-accounts.</div>
                 </div>
-                <span class="status-chip status-ok align-self-start">ACB / VCB / VPBank / Techcombank / MBBank</span>
+                <span class="status-chip status-ok align-self-start">Không nhập mật khẩu bank</span>
               </div>
 
-          <div class="step-row mb-4">
-            <div class="step-item is-active">
-              <div class="d-flex align-items-center gap-2">
-                <span class="step-index">1</span>
-                <div>
-                  <div class="fw-semibold">Thông tin</div>
-                  <div class="text-muted small">Bank và tài khoản</div>
-                </div>
-              </div>
-            </div>
-            <div class="step-item {{ (!empty($pendingVcb) || !empty($pendingVpbank) || !empty($pendingTechcombank)) ? 'is-active' : '' }}" data-add-bank-step="otp">
-              <div class="d-flex align-items-center gap-2">
-                <span class="step-index">2</span>
-                <div>
-                  <div class="fw-semibold">Xác thực</div>
-                  <div class="text-muted small">Login hoặc OTP</div>
-                </div>
-              </div>
-            </div>
-          </div>
+              <form method="POST" action="{{ route('admin.recharge-settings.token.update') }}" class="token-receiver-form">
+                @csrf
+                <input type="hidden" name="receiver_token_form" value="1">
 
-          <div class="mb-4">
-            <label class="form-label fw-semibold">Chọn ngân hàng</label>
-            <div class="bank-picker-grid">
-              <label class="bank-option">
-                <input class="bank-option-input" type="radio" name="add_bank_type" value="acb" data-add-bank-radio @checked($addBankType === 'acb')>
-                <span class="bank-option-card d-flex gap-3">
-                  <span class="bank-icon"><i class="bx bx-credit-card"></i></span>
-                  <span>
-                    <span class="d-block fw-semibold">ACB</span>
-                    <span class="d-block text-muted small">Đăng nhập một bước.</span>
-                  </span>
-                </span>
-              </label>
-              <label class="bank-option">
-                <input class="bank-option-input" type="radio" name="add_bank_type" value="vcb" data-add-bank-radio @checked($addBankType === 'vcb')>
-                <span class="bank-option-card d-flex gap-3">
-                  <span class="bank-icon"><i class="bx bx-bank"></i></span>
-                  <span>
-                    <span class="d-block fw-semibold">Vietcombank</span>
-                    <span class="d-block text-muted small">Gửi OTP rồi xác thực.</span>
-                  </span>
-                </span>
-              </label>
-              <label class="bank-option">
-                <input class="bank-option-input" type="radio" name="add_bank_type" value="vpbank" data-add-bank-radio @checked($addBankType === 'vpbank')>
-                <span class="bank-option-card d-flex gap-3">
-                  <span class="bank-icon"><i class="bx bx-buildings"></i></span>
-                  <span>
-                    <span class="d-block fw-semibold">VPBank</span>
-                    <span class="d-block text-muted small">Gửi OTP nếu thiết bị chưa tin cậy.</span>
-                  </span>
-                </span>
-              </label>
-              <label class="bank-option">
-                <input class="bank-option-input" type="radio" name="add_bank_type" value="techcombank" data-add-bank-radio @checked($addBankType === 'techcombank')>
-                <span class="bank-option-card d-flex gap-3">
-                  <span class="bank-icon"><i class="bx bx-building-house"></i></span>
-                  <span>
-                    <span class="d-block fw-semibold">Techcombank</span>
-                    <span class="d-block text-muted small">Duyệt đăng nhập trên app Mobile.</span>
-                  </span>
-                </span>
-              </label>
-              <label class="bank-option">
-                <input class="bank-option-input" type="radio" name="add_bank_type" value="mbbank" data-add-bank-radio @checked($addBankType === 'mbbank')>
-                <span class="bank-option-card d-flex gap-3">
-                  <span class="bank-icon"><i class="bx bx-bank"></i></span>
-                  <span>
-                    <span class="d-block fw-semibold">MBBank</span>
-                    <span class="d-block text-muted small">Tự giải captcha, đăng nhập một bước.</span>
-                  </span>
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <div class="info-strip mb-4" data-add-bank-note>
-            <div class="fw-semibold mb-1">
-              @if($addBankType === 'techcombank')
-                Techcombank xác nhận trên app
-              @elseif($addBankType === 'mbbank')
-                MBBank kết nối trực tiếp
-              @elseif($addBankType === 'vpbank')
-                VPBank có thể cần OTP
-              @elseif($addBankType === 'vcb')
-                Vietcombank cần OTP
-              @else
-                ACB kết nối trực tiếp
-              @endif
-            </div>
-            <div class="text-muted small">
-              @if($addBankType === 'techcombank')
-                Nhập tài khoản Techcombank và số tài khoản nhận, sau đó duyệt trên app Mobile.
-              @elseif($addBankType === 'mbbank')
-                Nhập tài khoản MBBank, mật khẩu và số tài khoản nhận, hệ thống tự giải captcha qua apibank.com.vn.
-              @elseif($addBankType === 'vpbank')
-                Nhập tài khoản VPBank, mật khẩu và số tài khoản nhận để gửi OTP khi cần.
-              @elseif($addBankType === 'vcb')
-                Nhập tài khoản VCB, mật khẩu và số tài khoản nhận để gửi OTP.
-              @else
-                Nhập số điện thoại ACB, mật khẩu và số tài khoản nhận nạp.
-              @endif
-            </div>
-          </div>
-
-          <form method="POST" action="{{ route('bank.accounts.store') }}" class="add-bank-form {{ $addBankType === 'acb' ? 'is-active' : '' }}" data-add-bank-form="acb">
-            @csrf
-            <input type="hidden" name="step" value="init">
-            <input type="hidden" name="bank_code" value="acb">
-            <input type="hidden" name="system_receiver" value="1">
-            <input type="hidden" name="return_to" value="recharge_settings">
-            <div class="row g-3">
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="receiver_phone">Tài khoản ACB</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-user"></i></span>
-                  <input class="form-control" id="receiver_phone" name="username" value="{{ old('username') }}" autocomplete="off" required>
+                <div class="mb-4">
+                  <label class="form-label fw-semibold">Chọn ngân hàng</label>
+                  <div class="bank-picker-grid">
+                    <label class="bank-option">
+                      <input class="bank-option-input" type="radio" name="receiver_bank_type" value="ACB" data-token-bank-radio @checked($tokenBankType === 'ACB')>
+                      <span class="bank-option-card d-flex gap-3">
+                        <span class="bank-icon"><i class="bx bx-credit-card"></i></span>
+                        <span>
+                          <span class="d-block fw-semibold">ACB</span>
+                          <span class="d-block text-muted small">Token account ACB hệ thống.</span>
+                        </span>
+                      </span>
+                    </label>
+                    <label class="bank-option">
+                      <input class="bank-option-input" type="radio" name="receiver_bank_type" value="VCB" data-token-bank-radio @checked($tokenBankType === 'VCB')>
+                      <span class="bank-option-card d-flex gap-3">
+                        <span class="bank-icon"><i class="bx bx-bank"></i></span>
+                        <span>
+                          <span class="d-block fw-semibold">Vietcombank</span>
+                          <span class="d-block text-muted small">Token account VCB hệ thống.</span>
+                        </span>
+                      </span>
+                    </label>
+                    <label class="bank-option">
+                      <input class="bank-option-input" type="radio" name="receiver_bank_type" value="VPBANK" data-token-bank-radio @checked($tokenBankType === 'VPBANK')>
+                      <span class="bank-option-card d-flex gap-3">
+                        <span class="bank-icon"><i class="bx bx-buildings"></i></span>
+                        <span>
+                          <span class="d-block fw-semibold">VPBank</span>
+                          <span class="d-block text-muted small">Token account VPBank hệ thống.</span>
+                        </span>
+                      </span>
+                    </label>
+                    <label class="bank-option">
+                      <input class="bank-option-input" type="radio" name="receiver_bank_type" value="TECHCOMBANK" data-token-bank-radio @checked($tokenBankType === 'TECHCOMBANK')>
+                      <span class="bank-option-card d-flex gap-3">
+                        <span class="bank-icon"><i class="bx bx-building-house"></i></span>
+                        <span>
+                          <span class="d-block fw-semibold">Techcombank</span>
+                          <span class="d-block text-muted small">Token account TCB hệ thống.</span>
+                        </span>
+                      </span>
+                    </label>
+                    <label class="bank-option">
+                      <input class="bank-option-input" type="radio" name="receiver_bank_type" value="MBBANK" data-token-bank-radio @checked($tokenBankType === 'MBBANK')>
+                      <span class="bank-option-card d-flex gap-3">
+                        <span class="bank-icon"><i class="bx bx-bank"></i></span>
+                        <span>
+                          <span class="d-block fw-semibold">MBBank</span>
+                          <span class="d-block text-muted small">Token account MBBank hệ thống.</span>
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                  @error('receiver_bank_type')
+                    <div class="text-danger small mt-2">{{ $message }}</div>
+                  @enderror
                 </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="receiver_password">Mật khẩu ACB</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-lock-alt"></i></span>
-                  <input class="form-control" id="receiver_password" name="password" type="password" autocomplete="new-password" required>
-                  <button class="btn btn-outline-secondary" type="button" data-toggle-password>
-                    <i class="bx bx-show"></i>
+
+                <div class="info-strip mb-4">
+                  <div class="fw-semibold mb-1">Token <span id="receiverTokenBankLabel">{{ $tokenBankType }}</span></div>
+                  <div class="text-muted small">Token phải đúng ngân hàng đã chọn và thuộc account hệ thống. Nếu dán nhầm token ngân hàng khác, hệ thống sẽ báo lỗi thay vì chọn sai tài khoản nhận nạp.</div>
+                </div>
+
+                <div class="mb-4">
+                  <label class="form-label fw-semibold" for="receiver_token">Token API ngân hàng</label>
+                  <textarea class="form-control @error('receiver_token') is-invalid @enderror"
+                            id="receiver_token"
+                            name="receiver_token"
+                            rows="5"
+                            autocomplete="off"
+                            placeholder="Dán token từ account ngân hàng hệ thống"
+                            required>{{ $selectedReceiverToken }}</textarea>
+                  @error('receiver_token')
+                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                  @enderror
+                </div>
+
+                <div class="connect-actions">
+                  <button class="btn btn-primary btn-touch w-100" type="submit">
+                    <i class="bx bx-save"></i> Lưu token nhận nạp
                   </button>
                 </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="receiver_stk">Số tài khoản nhận</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-hash"></i></span>
-                  <input class="form-control" id="receiver_stk" name="account_no" value="{{ old('account_no') }}" inputmode="numeric" required>
-                </div>
-              </div>
-              <div class="col-12 connect-actions">
-                <button class="btn btn-primary btn-touch w-100" type="submit">
-                  <i class="bx bx-plus"></i> Lưu token ACB
-                </button>
-              </div>
-            </div>
-          </form>
-
-          <form method="POST" action="{{ route('bank.accounts.store') }}" class="add-bank-form {{ $addBankType === 'vcb' ? 'is-active' : '' }}" data-add-bank-form="vcb">
-            @csrf
-            <input type="hidden" name="step" value="init">
-            <input type="hidden" name="bank_code" value="vcb">
-            <input type="hidden" name="system_receiver" value="1">
-            <input type="hidden" name="return_to" value="recharge_settings">
-            <div class="row g-3">
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="vcb_username">Tài khoản VCB</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-user"></i></span>
-                  <input class="form-control" id="vcb_username" name="username" value="{{ old('username', $pendingVcb['username'] ?? '') }}" autocomplete="off" required>
-                </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="vcb_password">Mật khẩu VCB</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-lock-alt"></i></span>
-                  <input class="form-control" id="vcb_password" name="password" type="password" autocomplete="new-password" required>
-                  <button class="btn btn-outline-secondary" type="button" data-toggle-password>
-                    <i class="bx bx-show"></i>
-                  </button>
-                </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="vcb_account_no">Số tài khoản nhận</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-hash"></i></span>
-                  <input class="form-control" id="vcb_account_no" name="account_no" value="{{ old('account_no', $pendingVcb['account_no'] ?? '') }}" inputmode="numeric" required>
-                </div>
-              </div>
-              <div class="col-12 connect-actions">
-                <button class="btn btn-outline-primary btn-touch w-100" type="submit">
-                  <i class="bx bx-message-square-dots"></i> Lưu token / gửi OTP VCB
-                </button>
-              </div>
-            </div>
-          </form>
-
-          <form method="POST" action="{{ route('bank.accounts.store') }}" class="add-bank-form {{ $addBankType === 'vpbank' ? 'is-active' : '' }}" data-add-bank-form="vpbank">
-            @csrf
-            <input type="hidden" name="step" value="init">
-            <input type="hidden" name="bank_code" value="vpbank">
-            <input type="hidden" name="system_receiver" value="1">
-            <input type="hidden" name="return_to" value="recharge_settings">
-            <div class="row g-3">
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="vpbank_username">Tài khoản VPBank</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-user"></i></span>
-                  <input class="form-control" id="vpbank_username" name="username" value="{{ old('username', $pendingVpbank['username'] ?? '') }}" autocomplete="off" required>
-                </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="vpbank_password">Mật khẩu VPBank</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-lock-alt"></i></span>
-                  <input class="form-control" id="vpbank_password" name="password" type="password" autocomplete="new-password" required>
-                  <button class="btn btn-outline-secondary" type="button" data-toggle-password>
-                    <i class="bx bx-show"></i>
-                  </button>
-                </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="vpbank_account_no">Số tài khoản nhận</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-hash"></i></span>
-                  <input class="form-control" id="vpbank_account_no" name="account_no" value="{{ old('account_no', $pendingVpbank['account_no'] ?? '') }}" inputmode="numeric" required>
-                </div>
-              </div>
-              <div class="col-12 connect-actions">
-                <button class="btn btn-outline-primary btn-touch w-100" type="submit">
-                  <i class="bx bx-message-square-dots"></i> Lưu token / gửi OTP VPBank
-                </button>
-              </div>
-            </div>
-          </form>
-
-          <form method="POST" action="{{ route('bank.accounts.store') }}" class="add-bank-form {{ $addBankType === 'techcombank' ? 'is-active' : '' }}" data-add-bank-form="techcombank">
-            @csrf
-            <input type="hidden" name="step" value="init">
-            <input type="hidden" name="bank_code" value="techcombank">
-            <input type="hidden" name="system_receiver" value="1">
-            <input type="hidden" name="return_to" value="recharge_settings">
-            <div class="row g-3">
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="techcombank_username">Tài khoản Techcombank</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-user"></i></span>
-                  <input class="form-control" id="techcombank_username" name="username" value="{{ old('username', $pendingTechcombank['username'] ?? '') }}" autocomplete="off" required>
-                </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="techcombank_account_no">Số tài khoản nhận</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-hash"></i></span>
-                  <input class="form-control" id="techcombank_account_no" name="account_no" value="{{ old('account_no', $pendingTechcombank['account_no'] ?? '') }}" inputmode="numeric" required>
-                </div>
-              </div>
-              <div class="col-12 connect-actions">
-                <button class="btn btn-outline-primary btn-touch w-100" type="submit">
-                  <i class="bx bx-log-in-circle"></i> Tạo link / sửa token Techcombank
-                </button>
-              </div>
-            </div>
-          </form>
-
-          <form method="POST" action="{{ route('bank.accounts.store') }}" class="add-bank-form {{ $addBankType === 'mbbank' ? 'is-active' : '' }}" data-add-bank-form="mbbank">
-            @csrf
-            <input type="hidden" name="step" value="init">
-            <input type="hidden" name="bank_code" value="mbbank">
-            <input type="hidden" name="system_receiver" value="1">
-            <input type="hidden" name="return_to" value="recharge_settings">
-            <div class="row g-3">
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="mbbank_username">Tài khoản MBBank</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-user"></i></span>
-                  <input class="form-control" id="mbbank_username" name="username" value="{{ old('username') }}" autocomplete="off" required>
-                </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="mbbank_password">Mật khẩu MBBank</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-lock-alt"></i></span>
-                  <input class="form-control" id="mbbank_password" name="password" type="password" autocomplete="new-password" required>
-                  <button class="btn btn-outline-secondary" type="button" data-toggle-password>
-                    <i class="bx bx-show"></i>
-                  </button>
-                </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label fw-semibold" for="mbbank_account_no">Số tài khoản nhận</label>
-                <div class="input-group">
-                  <span class="input-group-text field-icon"><i class="bx bx-hash"></i></span>
-                  <input class="form-control" id="mbbank_account_no" name="account_no" value="{{ old('account_no') }}" inputmode="numeric" required>
-                </div>
-              </div>
-              <div class="col-12 connect-actions">
-                <button class="btn btn-primary btn-touch w-100" type="submit">
-                  <i class="bx bx-plus"></i> Lưu token MBBank
-                </button>
-              </div>
-            </div>
-          </form>
-
-          @if(!empty($pendingVcb))
-            <form method="POST" action="{{ route('bank.accounts.store') }}" class="add-bank-form otp-panel mt-4 {{ $addBankType === 'vcb' ? 'is-active' : '' }}" data-add-bank-form="vcb">
-              @csrf
-              <input type="hidden" name="step" value="otp">
-              <input type="hidden" name="bank_code" value="vcb">
-              <input type="hidden" name="system_receiver" value="1">
-              <input type="hidden" name="return_to" value="recharge_settings">
-              <input type="hidden" name="username" value="{{ $pendingVcb['username'] ?? '' }}">
-              <input type="hidden" name="password" value="{{ $pendingVcb['password'] ?? '' }}">
-              <input type="hidden" name="account_no" value="{{ $pendingVcb['account_no'] ?? '' }}">
-              <div class="d-flex gap-2 mb-3">
-                <i class="bx bx-message-rounded-dots fs-4 text-warning"></i>
-                <div>
-                  <div class="fw-semibold">Nhập OTP Vietcombank</div>
-                  <div class="text-muted small">OTP cho {{ $pendingVcb['username'] ?? '-' }} · {{ $pendingVcb['account_no'] ?? '-' }}</div>
-                </div>
-              </div>
-              <label class="form-label fw-semibold" for="vcb_otp_code">Mã OTP</label>
-              <input class="form-control otp-code-input mb-3" id="vcb_otp_code" name="otp_code" inputmode="numeric" autocomplete="one-time-code" required>
-              <button class="btn btn-primary btn-touch w-100" type="submit">
-                <i class="bx bx-check-shield"></i> Xác thực và lưu token VCB
-              </button>
-            </form>
-          @endif
-          @if(!empty($pendingVpbank))
-            <form method="POST" action="{{ route('bank.accounts.store') }}" class="add-bank-form otp-panel mt-4 {{ $addBankType === 'vpbank' ? 'is-active' : '' }}" data-add-bank-form="vpbank">
-              @csrf
-              <input type="hidden" name="step" value="otp">
-              <input type="hidden" name="bank_code" value="vpbank">
-              <input type="hidden" name="system_receiver" value="1">
-              <input type="hidden" name="return_to" value="recharge_settings">
-              <input type="hidden" name="username" value="{{ $pendingVpbank['username'] ?? '' }}">
-              <input type="hidden" name="password" value="{{ $pendingVpbank['password'] ?? '' }}">
-              <input type="hidden" name="account_no" value="{{ $pendingVpbank['account_no'] ?? '' }}">
-              <div class="d-flex gap-2 mb-3">
-                <i class="bx bx-message-rounded-dots fs-4 text-warning"></i>
-                <div>
-                  <div class="fw-semibold">Nhập OTP VPBank</div>
-                  <div class="text-muted small">OTP cho {{ $pendingVpbank['username'] ?? '-' }} · {{ $pendingVpbank['account_no'] ?? '-' }}</div>
-                </div>
-              </div>
-              <label class="form-label fw-semibold" for="vpbank_otp_code">Mã OTP</label>
-              <input class="form-control otp-code-input mb-3" id="vpbank_otp_code" name="otp_code" inputmode="numeric" autocomplete="one-time-code" required>
-              <button class="btn btn-primary btn-touch w-100" type="submit">
-                <i class="bx bx-check-shield"></i> Xác thực và lưu token VPBank
-              </button>
-            </form>
-          @endif
-          @if(!empty($pendingTechcombank))
-            <form method="POST" action="{{ route('bank.accounts.store') }}" class="add-bank-form otp-panel mt-4 {{ $addBankType === 'techcombank' ? 'is-active' : '' }}" data-add-bank-form="techcombank">
-              @csrf
-              <input type="hidden" name="step" value="otp">
-              <input type="hidden" name="bank_code" value="techcombank">
-              <input type="hidden" name="system_receiver" value="1">
-              <input type="hidden" name="return_to" value="recharge_settings">
-              <input type="hidden" name="username" value="{{ $pendingTechcombank['username'] ?? '' }}">
-              <input type="hidden" name="password" value="{{ $pendingTechcombank['password'] ?? '' }}">
-              <input type="hidden" name="account_no" value="{{ $pendingTechcombank['account_no'] ?? '' }}">
-              <div class="d-flex gap-2 mb-3">
-                <i class="bx bx-mobile-alt fs-4 text-warning"></i>
-                <div>
-                  <div class="fw-semibold">Hoàn tất Techcombank</div>
-                  <div class="text-muted small">Mở Techcombank cho {{ $pendingTechcombank['username'] ?? '-' }} · {{ $pendingTechcombank['account_no'] ?? '-' }}, đăng nhập, duyệt Mobile rồi dán URL xác nhận.</div>
-                </div>
-              </div>
-              @if(!empty($pendingTechcombank['auth_url']))
-                <div class="d-flex flex-column flex-md-row gap-2 mb-3">
-                  <a class="btn btn-outline-primary btn-touch" href="{{ $pendingTechcombank['auth_url'] }}" target="_blank" rel="noopener">
-                    <i class="bx bx-log-in-circle"></i> Mở Techcombank
-                  </a>
-                  <button class="btn btn-outline-secondary btn-touch" type="button" data-copy-text="{{ $pendingTechcombank['auth_url'] }}">
-                    <i class="bx bx-copy"></i> Copy link
-                  </button>
-                </div>
-              @endif
-              <label class="form-label fw-semibold" for="techcombank_redirect_url">URL sau khi xác nhận</label>
-              <textarea class="form-control mb-3"
-                        id="techcombank_redirect_url"
-                        name="redirect_url"
-                        rows="3"
-                        placeholder="Dán toàn bộ URL có code=... sau khi đăng nhập và duyệt app Mobile"
-                        required>{{ old('redirect_url') }}</textarea>
-              <button class="btn btn-primary btn-touch w-100" type="submit">
-                <i class="bx bx-check-shield"></i> Lưu token Techcombank
-              </button>
-            </form>
-          @endif
+              </form>
             </div>
           </div>
 
@@ -1419,10 +1122,10 @@
             <div class="connect-aside">
               <div class="aside-block">
                 <div class="d-flex gap-2">
-                  <i class="bx bx-shield-quarter fs-4 text-primary"></i>
+                  <i class="bx bx-key fs-4 text-primary"></i>
                   <div>
-                    <div class="fw-semibold mb-1">Account nhận tiền hệ thống</div>
-                    <div class="text-muted small">Account thêm tại đây thuộc Super Admin và có thể chọn làm nguồn nhận nạp.</div>
+                    <div class="fw-semibold mb-1">Chỉ cấu hình token</div>
+                    <div class="text-muted small">Trang này không tạo phiên đăng nhập bank. Account phải được thêm sẵn ở bank-accounts và có token hợp lệ.</div>
                   </div>
                 </div>
               </div>
@@ -1431,9 +1134,13 @@
                   <i class="bx bx-refresh fs-4 text-success"></i>
                   <div>
                     <div class="fw-semibold mb-1">Quét tự động</div>
-                    <div class="text-muted small">Sau khi chọn account active, cron dùng đúng tài khoản này để đối soát giao dịch.</div>
+                    <div class="text-muted small">Sau khi token được chọn, cron nhận nạp dùng đúng account tương ứng để đối soát giao dịch.</div>
                   </div>
                 </div>
+              </div>
+              <div class="aside-block">
+                <div class="field-label mb-1">Token đang chọn</div>
+                <div class="readonly-box">{{ $selectedReceiverToken ? \Illuminate\Support\Str::limit($selectedReceiverToken, 44, '...') : 'Chưa có token' }}</div>
               </div>
             </div>
           </div>
@@ -1465,15 +1172,11 @@
   const tabButtons = document.querySelectorAll('[data-recharge-tab]');
   const tabPanes = document.querySelectorAll('[data-recharge-tab-pane]');
   const tabJumps = document.querySelectorAll('[data-recharge-tab-jump]');
-  const addBankRadios = document.querySelectorAll('[data-add-bank-radio]');
-  const addBankForms = document.querySelectorAll('[data-add-bank-form]');
-  const addBankNote = document.querySelector('[data-add-bank-note]');
-  const addBankOtpStep = document.querySelector('[data-add-bank-step="otp"]');
+  const tokenBankRadios = document.querySelectorAll('[data-token-bank-radio]');
+  const receiverTokenInput = document.getElementById('receiver_token');
+  const receiverTokenBankLabel = document.getElementById('receiverTokenBankLabel');
   const inlineTokenEditButtons = document.querySelectorAll('[data-inline-token-edit]');
   const id = @json($exampleUserId);
-  const pendingVcb = @json(!empty($pendingVcb));
-  const pendingVpbank = @json(!empty($pendingVpbank));
-  const pendingTechcombank = @json(!empty($pendingTechcombank));
 
   const setRechargeTab = (tab, updateHash = true) => {
     tabButtons.forEach((button) => {
@@ -1543,84 +1246,44 @@
     });
   }
 
-  const addBankCopy = {
-    acb: {
-      title: 'ACB kết nối trực tiếp',
-      body: 'Nhập số điện thoại ACB, mật khẩu và số tài khoản nhận nạp.'
-    },
-    vcb: {
-      title: 'Vietcombank cần OTP',
-      body: 'Nhập tài khoản VCB, mật khẩu và số tài khoản nhận để gửi OTP.'
-    },
-    vpbank: {
-      title: 'VPBank có thể cần OTP',
-      body: 'Nhập tài khoản VPBank, mật khẩu và số tài khoản nhận để gửi OTP khi cần.'
-    },
-    techcombank: {
-      title: 'Techcombank đăng nhập bằng trình duyệt thật',
-      body: 'Nhập tài khoản và số tài khoản nhận, tạo link, đăng nhập trực tiếp trên Techcombank rồi dán URL xác nhận.'
-    },
-    mbbank: {
-      title: 'MBBank kết nối trực tiếp',
-      body: 'Nhập tài khoản MBBank, mật khẩu và số tài khoản nhận, hệ thống tự giải captcha qua apibank.com.vn.'
+  const tokenBankLabels = {
+    ACB: 'ACB',
+    VCB: 'Vietcombank',
+    VPBANK: 'VPBank',
+    TECHCOMBANK: 'Techcombank',
+    MBBANK: 'MBBank'
+  };
+
+  const setReceiverTokenBank = (bankType) => {
+    if (receiverTokenBankLabel) {
+      receiverTokenBankLabel.textContent = tokenBankLabels[bankType] || bankType || 'ACB';
     }
   };
 
-  const setAddBank = (bank) => {
-    addBankForms.forEach((form) => {
-      form.classList.toggle('is-active', form.dataset.addBankForm === bank);
-    });
-
-    if (addBankNote) {
-      const title = addBankNote.querySelector('.fw-semibold');
-      const body = addBankNote.querySelector('.text-muted');
-      const copy = addBankCopy[bank] || addBankCopy.acb;
-      if (title && body) {
-        title.textContent = copy.title;
-        body.textContent = copy.body;
-      }
-    }
-
-    if (addBankOtpStep) {
-      addBankOtpStep.classList.toggle('is-active', (bank === 'vcb' && pendingVcb) || (bank === 'vpbank' && pendingVpbank) || (bank === 'techcombank' && pendingTechcombank));
-    }
-  };
-
-  addBankRadios.forEach((radio) => {
-    radio.addEventListener('change', () => setAddBank(radio.value));
-    if (radio.checked) setAddBank(radio.value);
+  tokenBankRadios.forEach((radio) => {
+    radio.addEventListener('change', () => setReceiverTokenBank(radio.value));
+    if (radio.checked) setReceiverTokenBank(radio.value);
   });
 
-  const fillReceiverTokenForm = (bank, username, accountNo) => {
-    const radio = document.querySelector('[data-add-bank-radio][value="' + bank + '"]');
+  const fillReceiverTokenForm = (bankType, token) => {
+    const normalizedBank = (bankType || 'ACB').toUpperCase();
+    const radio = document.querySelector('[data-token-bank-radio][value="' + normalizedBank + '"]');
     if (radio) {
       radio.checked = true;
-      setAddBank(bank);
+      setReceiverTokenBank(normalizedBank);
     }
 
-    const selectors = {
-      acb: ['#receiver_phone', '#receiver_stk', '#receiver_password'],
-      vcb: ['#vcb_username', '#vcb_account_no', '#vcb_password'],
-      vpbank: ['#vpbank_username', '#vpbank_account_no', '#vpbank_password'],
-      techcombank: ['#techcombank_username', '#techcombank_account_no', null],
-      mbbank: ['#mbbank_username', '#mbbank_account_no', '#mbbank_password']
-    };
-    const [usernameSelector, accountSelector, passwordSelector] = selectors[bank] || selectors.acb;
-    const usernameInput = document.querySelector(usernameSelector);
-    const accountInput = document.querySelector(accountSelector);
-    const passwordInput = passwordSelector ? document.querySelector(passwordSelector) : null;
-
-    if (usernameInput) usernameInput.value = username || '';
-    if (accountInput) accountInput.value = accountNo || '';
-    if (passwordInput) passwordInput.value = '';
+    if (receiverTokenInput) {
+      receiverTokenInput.value = token || '';
+    }
 
     setRechargeTab('add');
-    setTimeout(() => (passwordInput || accountInput || usernameInput)?.focus(), 80);
+    setTimeout(() => receiverTokenInput?.focus(), 80);
   };
 
   inlineTokenEditButtons.forEach((button) => {
     button.addEventListener('click', () => {
-      fillReceiverTokenForm(button.dataset.bank || 'acb', button.dataset.username || '', button.dataset.accountNo || '');
+      fillReceiverTokenForm(button.dataset.bankType || 'ACB', button.dataset.token || '');
     });
   });
 

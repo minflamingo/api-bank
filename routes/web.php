@@ -171,6 +171,7 @@ Route::middleware(['auth','checkRole:1,2,3'])->group(function () {
         Route::get('/admin/logs', [SuperAdminController::class, 'logs'])->name('admin.logs');
         Route::get('/admin/bank-accounts', [BankAccountsController::class, 'adminIndex'])->name('admin.bank-accounts.index');
         Route::get('/admin/recharge-settings', [PayinController::class, 'rechargeSettings'])->name('admin.recharge-settings.edit');
+        Route::post('/admin/recharge-settings/token', [PayinController::class, 'updateReceiverToken'])->name('admin.recharge-settings.token.update');
         Route::post('/admin/recharge-settings/acb-account', [PayinController::class, 'storeReceiverAcbAccount'])->name('admin.recharge-settings.acb-account.store');
         Route::post('/admin/recharge-settings/vcb-account/otp', [PayinController::class, 'requestReceiverVcbOtp'])->name('admin.recharge-settings.vcb-account.otp');
         Route::post('/admin/recharge-settings/vcb-account', [PayinController::class, 'storeReceiverVcbAccount'])->name('admin.recharge-settings.vcb-account.store');

@@ -180,9 +180,9 @@ class QuanlyAccountLinkController extends Controller
         $requiredEvents = ['transaction.created', 'transaction.updated'];
         $endpoint = WebhookEndpoint::query()
             ->where('user_id', (int) $user->id)
-            ->where('url', $url)
             ->orderBy('id')
-            ->first();
+            ->get()
+            ->first(fn (WebhookEndpoint $endpoint) => $this->sameWebhookTarget((string) $endpoint->url, $url));
 
         if (!$endpoint) {
             $endpoint = new WebhookEndpoint([
@@ -202,6 +202,19 @@ class QuanlyAccountLinkController extends Controller
         ])->save();
 
         return true;
+    }
+
+    private function sameWebhookTarget(string $left, string $right): bool
+    {
+        $normalize = static function (string $value): ?string {
+            $parts = parse_url(trim($value));
+            $host = strtolower((string) ($parts['host'] ?? ''));
+            $path = '/' . trim((string) ($parts['path'] ?? ''), '/');
+
+            return $host !== '' ? ($host . $path) : null;
+        };
+
+        return $normalize($left) !== null && $normalize($left) === $normalize($right);
     }
 
     private function payloadBank(array $payload): string

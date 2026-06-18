@@ -38,6 +38,7 @@ class PayinController extends Controller
         $minAmount = (int) ($bank->min_amount ?: self::DEFAULT_MIN_AMOUNT);
         $instructions = trim((string) ($bank->instructions ?? ''));
         $bankLabel = $this->bankLabel((string) ($bank->receiver_bank_type ?: $bank->short_name ?: 'ACB'));
+        $scanInterval = max(1, min(60, (int) ($bank->recharge_scan_interval_seconds ?: self::DEFAULT_RECHARGE_SCAN_INTERVAL_SECONDS)));
         $balance = (int) ($user->amount ?? 0);
         $invoices = Invoice::where('user_id', $user->id)
             ->orderBy('create_time', 'desc')
@@ -53,6 +54,7 @@ class PayinController extends Controller
             'minAmount',
             'instructions',
             'bankLabel',
+            'scanInterval',
             'balance',
             'invoices'
         ));

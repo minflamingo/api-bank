@@ -189,7 +189,7 @@
       <div class="text-muted">Chuyển khoản đúng nội dung, hệ thống tự đối soát và cộng tiền.</div>
     </div>
     <div class="bank-badge">
-      <i class="bx bx-refresh bx-spin"></i> Tự kiểm tra mỗi 2 giây
+      <i class="bx bx-refresh bx-spin"></i> Tự kiểm tra mỗi {{ $scanInterval }} giây
     </div>
   </div>
 
@@ -272,7 +272,7 @@
               <span class="pulse-dot mt-1"></span>
               <div>
                 <div class="status-title" id="statusTitle">Đang chờ giao dịch</div>
-                <div class="status-text" id="statusText">APIBank tự đối soát 2 giây/lần. Giữ đúng nội dung chuyển khoản để được cộng tiền tự động.</div>
+                <div class="status-text" id="statusText">APIBank tự đối soát {{ $scanInterval }} giây/lần. Giữ đúng nội dung chuyển khoản để được cộng tiền tự động.</div>
               </div>
             </div>
           </div>
@@ -334,6 +334,7 @@
   const base = @json($qrUrl);
   const checkUrl = @json(url('/ajaxs/client/checknaptien'));
   const startedAt = @json(time());
+  const pollIntervalMs = @json($scanInterval * 1000);
   const fmt = n => new Intl.NumberFormat('vi-VN').format(+n || 0) + ' đ';
   const status = $('status');
   const statusTitle = $('statusTitle');
@@ -463,7 +464,7 @@
   }
 
   setTimeout(pollRecharge, 800);
-  setInterval(pollRecharge, 2000);
+  setInterval(pollRecharge, pollIntervalMs);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) pollRecharge();
   });

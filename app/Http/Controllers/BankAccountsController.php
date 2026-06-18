@@ -569,6 +569,14 @@ class BankAccountsController extends Controller
                 $routeParams['system_receiver'] = 1;
             }
 
+            if ($this->wantsRechargeSettingsReturn($request) && !empty($routeParams['system_receiver'])) {
+                return redirect(route('admin.recharge-settings.edit', [
+                    'tab' => 'add',
+                    'bank' => $routeParams['bank'],
+                    'otp' => 1,
+                ]) . '#add')->with('warning', (string) $payload['message']);
+            }
+
             return redirect()
                 ->route('bank.accounts.create', $routeParams)
                 ->with('warning', (string) $payload['message']);
@@ -613,6 +621,11 @@ class BankAccountsController extends Controller
         }
 
         return route('bank.accounts.index');
+    }
+
+    private function wantsRechargeSettingsReturn(Request $request): bool
+    {
+        return (string) $request->input('return_to') === 'recharge_settings';
     }
 
     private function payloadFrom($response): array

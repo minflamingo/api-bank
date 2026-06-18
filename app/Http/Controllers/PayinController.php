@@ -114,9 +114,9 @@ class PayinController extends Controller
         $vpbankReceiverAccounts = $this->vpbankReceiverAccounts($bank);
         $techcombankReceiverAccounts = $this->techcombankReceiverAccounts($bank);
         $mbbankReceiverAccounts = $this->mbbankReceiverAccounts($bank);
-        $pendingVcb = (array) session('recharge_receiver_vcb_pending', []);
-        $pendingVpbank = (array) session('recharge_receiver_vpbank_pending', []);
-        $pendingTechcombank = (array) session('recharge_receiver_techcombank_pending', []);
+        $pendingVcb = (array) session('bank_accounts_vcb_pending', []);
+        $pendingVpbank = (array) session('bank_accounts_vpbank_pending', []);
+        $pendingTechcombank = (array) session('bank_accounts_techcombank_pending', []);
 
         return view('admin.recharge-settings', compact(
             'bank',

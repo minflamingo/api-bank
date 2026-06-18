@@ -24,6 +24,13 @@
       "target": ""
     },
     {
+      "url": "/client/webhooks",
+      "icon": "menu-icon tf-icons bx bx-link",
+      "name": "Webhook",
+      "slug": "client.webhooks.index",
+      "target": ""
+    },
+    {
       "menuHeader": "Thanh toán"
     },
     {

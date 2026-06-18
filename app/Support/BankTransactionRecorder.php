@@ -4,15 +4,21 @@ namespace App\Support;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class BankTransactionRecorder
 {
     public function save(string $bank, ?int $accountId, ?int $userId, string $accountNo, array $transactions): int
     {
+        return (int) $this->upsert($bank, $accountId, $userId, $accountNo, $transactions)['created'];
+    }
+
+    public function upsert(string $bank, ?int $accountId, ?int $userId, string $accountNo, array $transactions): array
+    {
         $bank = strtolower(trim($bank));
         $accountNo = trim($accountNo);
         if ($bank === '' || $accountNo === '' || empty($transactions)) {
-            return 0;
+            return ['created' => 0, 'updated' => 0, 'created_rows' => [], 'updated_rows' => []];
         }
 
         $now = now();
@@ -29,15 +35,51 @@ class BankTransactionRecorder
         }
 
         if (!$rows) {
-            return 0;
+            return ['created' => 0, 'updated' => 0, 'created_rows' => [], 'updated_rows' => []];
         }
 
-        $inserted = 0;
-        foreach (array_chunk(array_values($rows), 500) as $chunk) {
-            $inserted += (int) DB::table('bank_transactions')->insertOrIgnore($chunk);
+        $created = 0;
+        $updated = 0;
+        $createdRows = [];
+        $updatedRows = [];
+        $columns = $this->bankTransactionColumns();
+
+        foreach (array_values($rows) as $row) {
+            $row = array_intersect_key($row, $columns);
+            $hash = (string) ($row['transaction_hash'] ?? '');
+            if ($hash === '') {
+                continue;
+            }
+
+            $existing = DB::table('bank_transactions')
+                ->where('transaction_hash', $hash)
+                ->first();
+
+            if ($existing) {
+                $update = $row;
+                unset($update['created_at']);
+                $update['updated_at'] = $now;
+                DB::table('bank_transactions')->where('id', $existing->id)->update($update);
+                $row['id'] = (int) $existing->id;
+                if ($this->rowChanged((array) $existing, $row)) {
+                    $updated++;
+                    $updatedRows[] = $row;
+                }
+                continue;
+            }
+
+            $id = DB::table('bank_transactions')->insertGetId($row);
+            $row['id'] = (int) $id;
+            $created++;
+            $createdRows[] = $row;
         }
 
-        return $inserted;
+        return [
+            'created' => $created,
+            'updated' => $updated,
+            'created_rows' => $createdRows,
+            'updated_rows' => $updatedRows,
+        ];
     }
 
     private function rowFromTransaction(string $bank, ?int $accountId, ?int $userId, string $accountNo, array $item, $now): ?array
@@ -100,10 +142,14 @@ class BankTransactionRecorder
             'user_id' => $userId,
             'account_id' => $accountId,
             'bank' => $bank,
+            'bank_code' => $bank,
             'account_no' => mb_substr($accountNo, 0, 64),
             'transaction_id' => $transactionId !== '' ? $transactionId : null,
+            'ref_id' => $reference !== '' ? mb_substr($reference, 0, 191) : null,
             'transaction_hash' => hash('sha256', $hashSeed),
+            'transaction_uid' => hash('sha256', $hashSeed),
             'posted_at' => $postedAt ? $postedAt->format('Y-m-d H:i:s') : null,
+            'happened_at' => $postedAt ? $postedAt->format('Y-m-d H:i:s') : null,
             'direction' => $direction,
             'amount' => $amount,
             'currency' => 'VND',
@@ -111,9 +157,60 @@ class BankTransactionRecorder
             'counterparty_name' => $party['name'] !== '' ? mb_substr($party['name'], 0, 255) : null,
             'counterparty_account' => $party['account'] !== '' ? mb_substr($party['account'], 0, 64) : null,
             'counterparty_bank' => $party['bank'] !== '' ? mb_substr($party['bank'], 0, 191) : null,
+            'raw' => $raw,
+            'synced_at' => $now,
+            'active_ms' => $this->activeMs($item, $postedAt),
             'created_at' => $now,
             'updated_at' => $now,
         ];
+    }
+
+    private function activeMs(array $item, ?Carbon $postedAt): ?int
+    {
+        $value = $this->firstValue($item, ['active_ms', 'activeMs', '_active_ms', 'transactionDateTime', 'createdAt']);
+        $digits = $this->digits($value);
+        if ($digits !== '' && strlen($digits) >= 10) {
+            return (int) (strlen($digits) > 13 ? substr($digits, 0, 13) : $digits);
+        }
+
+        return $postedAt ? (int) ($postedAt->getTimestamp() * 1000) : null;
+    }
+
+    private function bankTransactionColumns(): array
+    {
+        static $columns = null;
+        if ($columns !== null) {
+            return $columns;
+        }
+
+        try {
+            $columns = array_flip(Schema::getColumnListing('bank_transactions'));
+        } catch (\Throwable $e) {
+            $columns = [];
+        }
+
+        return $columns;
+    }
+
+    private function rowChanged(array $existing, array $next): bool
+    {
+        foreach (['transaction_id', 'ref_id', 'posted_at', 'happened_at', 'direction', 'amount', 'description', 'counterparty_name', 'counterparty_account', 'counterparty_bank'] as $key) {
+            $old = $existing[$key] ?? null;
+            $new = $next[$key] ?? null;
+
+            if (in_array($key, ['amount'], true)) {
+                if ((int) $old !== (int) $new) {
+                    return true;
+                }
+                continue;
+            }
+
+            if ((string) $old !== (string) $new) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function transactionAmount(string $bank, array $item): int

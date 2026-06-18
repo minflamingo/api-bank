@@ -23,56 +23,58 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\PayinController;
 use App\Http\Controllers\CronController;
 use App\Http\Controllers\BankAccountsController;
+use App\Http\Controllers\CachedBankApiController;
 use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\QuanlyAccountLinkController;
+use App\Http\Controllers\WebhookEndpointController;
 // ----------------------------------------------------------------------
 // Các route public (khách)
 // ----------------------------------------------------------------------
 
 // (Mới) Lấy số dư VCB
-Route::get('/v1/vcb/balance/{token}', [PaymentController::class, 'vcbGetBalanceAPI'])->name('api.vcb.balance');
+Route::get('/v1/vcb/balance/{token}', [CachedBankApiController::class, 'vcbBalance'])->name('api.vcb.balance');
 // (Mới) Lấy số dư ACB
-Route::get('/v1/acb/balance/{token}', [PaymentController::class, 'acbGetBalanceAPI'])->name('payment.acb.balance');
+Route::get('/v1/acb/balance/{token}', [CachedBankApiController::class, 'acbBalance'])->name('payment.acb.balance');
 // (Mới) Lấy số dư VPBank
-Route::get('/v1/vpbank/balance/{token}', [PaymentController::class, 'vpbankGetBalanceAPI'])->name('api.vpbank.balance');
+Route::get('/v1/vpbank/balance/{token}', [CachedBankApiController::class, 'vpbankBalance'])->name('api.vpbank.balance');
 // (Mới) Lấy số dư Techcombank
-Route::get('/v1/techcombank/balance/{token}', [PaymentController::class, 'techcombankGetBalanceAPI'])->name('api.techcombank.balance');
+Route::get('/v1/techcombank/balance/{token}', [CachedBankApiController::class, 'techcombankBalance'])->name('api.techcombank.balance');
 // (Mới) Lấy số dư MBBank
-Route::get('/v1/mbbank/balance/{token}', [PaymentController::class, 'mbbankGetBalanceAPI'])->name('api.mbbank.balance');
+Route::get('/v1/mbbank/balance/{token}', [CachedBankApiController::class, 'mbbankBalance'])->name('api.mbbank.balance');
 
 // **Route mới**: Lấy giao dịch VCB (api)
-Route::get('/v1/vcb/transhistory/{token}', [PaymentController::class, 'vcbGetTransHistoryAPI'])->name('v1.vcb.transhistory');
+Route::get('/v1/vcb/transhistory/{token}', [CachedBankApiController::class, 'vcbTransHistory'])->name('v1.vcb.transhistory');
 // **Route mới**: Lấy giao dịch ACB (api)
-Route::get('/v1/acb/transhistory/{token}', [PaymentController::class, 'acbGetTransHistoryAPI'])->name('v1.acb.transhistory');
+Route::get('/v1/acb/transhistory/{token}', [CachedBankApiController::class, 'acbTransHistory'])->name('v1.acb.transhistory');
 // **Route mới**: Lấy giao dịch VPBank (api)
-Route::get('/v1/vpbank/transhistory/{token}', [PaymentController::class, 'vpbankGetTransHistoryAPI'])->name('v1.vpbank.transhistory');
+Route::get('/v1/vpbank/transhistory/{token}', [CachedBankApiController::class, 'vpbankTransHistory'])->name('v1.vpbank.transhistory');
 // **Route mới**: Lấy giao dịch Techcombank (api)
-Route::get('/v1/techcombank/transhistory/{token}', [PaymentController::class, 'techcombankGetTransHistoryAPI'])->name('v1.techcombank.transhistory');
+Route::get('/v1/techcombank/transhistory/{token}', [CachedBankApiController::class, 'techcombankTransHistory'])->name('v1.techcombank.transhistory');
 // **Route mới**: Lấy giao dịch MBBank (api)
-Route::get('/v1/mbbank/transhistory/{token}', [PaymentController::class, 'mbbankGetTransHistoryAPI'])->name('v1.mbbank.transhistory');
+Route::get('/v1/mbbank/transhistory/{token}', [CachedBankApiController::class, 'mbbankTransHistory'])->name('v1.mbbank.transhistory');
 
 // API Bank v2.0 aliases: current app.pro.vn API after moving to apibank.com.vn.
-Route::get('/v2/vcb/balance/{token}', [PaymentController::class, 'vcbGetBalanceAPI'])->name('v2.vcb.balance');
-Route::get('/v2/acb/balance/{token}', [PaymentController::class, 'acbGetBalanceAPI'])->name('v2.acb.balance');
-Route::get('/v2/vpbank/balance/{token}', [PaymentController::class, 'vpbankGetBalanceAPI'])->name('v2.vpbank.balance');
-Route::get('/v2/techcombank/balance/{token}', [PaymentController::class, 'techcombankGetBalanceAPI'])->name('v2.techcombank.balance');
-Route::get('/v2/mbbank/balance/{token}', [PaymentController::class, 'mbbankGetBalanceAPI'])->name('v2.mbbank.balance');
-Route::get('/v2/vcb/transhistory/{token}', [PaymentController::class, 'vcbGetTransHistoryAPI'])->name('v2.vcb.transhistory');
-Route::get('/v2/acb/transhistory/{token}', [PaymentController::class, 'acbGetTransHistoryAPI'])->name('v2.acb.transhistory');
-Route::get('/v2/vpbank/transhistory/{token}', [PaymentController::class, 'vpbankGetTransHistoryAPI'])->name('v2.vpbank.transhistory');
-Route::get('/v2/techcombank/transhistory/{token}', [PaymentController::class, 'techcombankGetTransHistoryAPI'])->name('v2.techcombank.transhistory');
-Route::get('/v2/mbbank/transhistory/{token}', [PaymentController::class, 'mbbankGetTransHistoryAPI'])->name('v2.mbbank.transhistory');
+Route::get('/v2/vcb/balance/{token}', [CachedBankApiController::class, 'vcbBalance'])->name('v2.vcb.balance');
+Route::get('/v2/acb/balance/{token}', [CachedBankApiController::class, 'acbBalance'])->name('v2.acb.balance');
+Route::get('/v2/vpbank/balance/{token}', [CachedBankApiController::class, 'vpbankBalance'])->name('v2.vpbank.balance');
+Route::get('/v2/techcombank/balance/{token}', [CachedBankApiController::class, 'techcombankBalance'])->name('v2.techcombank.balance');
+Route::get('/v2/mbbank/balance/{token}', [CachedBankApiController::class, 'mbbankBalance'])->name('v2.mbbank.balance');
+Route::get('/v2/vcb/transhistory/{token}', [CachedBankApiController::class, 'vcbTransHistory'])->name('v2.vcb.transhistory');
+Route::get('/v2/acb/transhistory/{token}', [CachedBankApiController::class, 'acbTransHistory'])->name('v2.acb.transhistory');
+Route::get('/v2/vpbank/transhistory/{token}', [CachedBankApiController::class, 'vpbankTransHistory'])->name('v2.vpbank.transhistory');
+Route::get('/v2/techcombank/transhistory/{token}', [CachedBankApiController::class, 'techcombankTransHistory'])->name('v2.techcombank.transhistory');
+Route::get('/v2/mbbank/transhistory/{token}', [CachedBankApiController::class, 'mbbankTransHistory'])->name('v2.mbbank.transhistory');
 
-Route::get('/api/historyvietcombank/{token}', [PaymentController::class, 'vcbGetTransHistoryAPI'])->name('api.vcb.history');
-Route::get('/api/historyvietcombankbalance/{token}', [PaymentController::class, 'vcbGetBalanceAPI'])->name('api.vcb.balance.legacy');
-Route::get('/api/historyacb/{token}', [PaymentController::class, 'acbGetTransHistoryAPI'])->name('api.acb.history');
-Route::get('/api/historyacbbalance/{token}', [PaymentController::class, 'acbGetBalanceAPI'])->name('api.acb.balance.legacy');
-Route::get('/api/historyvpbank/{token}', [PaymentController::class, 'vpbankGetTransHistoryAPI'])->name('api.vpbank.history');
-Route::get('/api/historyvpbankbalance/{token}', [PaymentController::class, 'vpbankGetBalanceAPI'])->name('api.vpbank.balance.legacy');
-Route::get('/api/historytechcombank/{token}', [PaymentController::class, 'techcombankGetTransHistoryAPI'])->name('api.techcombank.history');
-Route::get('/api/historytechcombankbalance/{token}', [PaymentController::class, 'techcombankGetBalanceAPI'])->name('api.techcombank.balance.legacy');
-Route::get('/api/historymbbank/{token}', [PaymentController::class, 'mbbankGetTransHistoryAPI'])->name('api.mbbank.history');
-Route::get('/api/historymbbankbalance/{token}', [PaymentController::class, 'mbbankGetBalanceAPI'])->name('api.mbbank.balance.legacy');
+Route::get('/api/historyvietcombank/{token}', [CachedBankApiController::class, 'vcbTransHistory'])->name('api.vcb.history');
+Route::get('/api/historyvietcombankbalance/{token}', [CachedBankApiController::class, 'vcbBalance'])->name('api.vcb.balance.legacy');
+Route::get('/api/historyacb/{token}', [CachedBankApiController::class, 'acbTransHistory'])->name('api.acb.history');
+Route::get('/api/historyacbbalance/{token}', [CachedBankApiController::class, 'acbBalance'])->name('api.acb.balance.legacy');
+Route::get('/api/historyvpbank/{token}', [CachedBankApiController::class, 'vpbankTransHistory'])->name('api.vpbank.history');
+Route::get('/api/historyvpbankbalance/{token}', [CachedBankApiController::class, 'vpbankBalance'])->name('api.vpbank.balance.legacy');
+Route::get('/api/historytechcombank/{token}', [CachedBankApiController::class, 'techcombankTransHistory'])->name('api.techcombank.history');
+Route::get('/api/historytechcombankbalance/{token}', [CachedBankApiController::class, 'techcombankBalance'])->name('api.techcombank.balance.legacy');
+Route::get('/api/historymbbank/{token}', [CachedBankApiController::class, 'mbbankTransHistory'])->name('api.mbbank.history');
+Route::get('/api/historymbbankbalance/{token}', [CachedBankApiController::class, 'mbbankBalance'])->name('api.mbbank.balance.legacy');
 
 Route::get('/cron/acb', [CronController::class, 'cronNapACB'])->name('cron.acb');
 Route::get('/cron/vcb', [CronController::class, 'cronNapVCB'])->name('cron.vcb');
@@ -152,6 +154,10 @@ Route::middleware(['auth','checkRole:1,2,3'])->group(function () {
 		Route::get('/client/upgrade', [PayinController::class, 'upgradeIndex'])->name('client.upgrade');
     Route::post('/client/upgrade/total', [PayinController::class, 'upgradeTotal'])->name('client.upgrade.total');
     Route::post('/client/upgrade', [PayinController::class, 'upgradeStore'])->name('client.upgrade.store');
+    Route::get('/client/webhooks', [WebhookEndpointController::class, 'index'])->name('client.webhooks.index');
+    Route::post('/client/webhooks', [WebhookEndpointController::class, 'store'])->name('client.webhooks.store');
+    Route::put('/client/webhooks/{webhook}', [WebhookEndpointController::class, 'update'])->name('client.webhooks.update');
+    Route::delete('/client/webhooks/{webhook}', [WebhookEndpointController::class, 'destroy'])->name('client.webhooks.destroy');
 
     Route::middleware('checkRole:1')->group(function () {
         Route::get('/admin', [SuperAdminController::class, 'index'])->name('admin.dashboard');

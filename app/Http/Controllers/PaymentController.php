@@ -4621,6 +4621,166 @@ class PaymentController extends Controller
         return response()->json($arrLSGD);
     }
 
+    public function internalBankSnapshotForScanner(string $bank, int $accountId, int $limit = 100): array
+    {
+        $bank = strtolower(trim($bank));
+        $limit = max(20, min(500, $limit));
+
+        try {
+            return match ($bank) {
+                'vcb' => $this->internalVcbSnapshotForScanner($accountId),
+                'acb' => $this->internalAcbSnapshotForScanner($accountId, $limit),
+                'vpbank' => $this->internalVpbankSnapshotForScanner($accountId, $limit),
+                'techcombank' => $this->internalTechcombankSnapshotForScanner($accountId, $limit),
+                'mbbank' => $this->internalMbbankSnapshotForScanner($accountId, $limit),
+                default => ['ok' => false, 'message' => 'Ngân hàng không hỗ trợ scanner'],
+            };
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['ok' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    private function internalVcbSnapshotForScanner(int $accountId): array
+    {
+        $acc = AccountVietcombank::whereKey($accountId)->first();
+        if (!$acc) {
+            return ['ok' => false, 'message' => 'Không tìm thấy tài khoản VCB'];
+        }
+
+        $history = json_decode((string) $this->get_lsgd($acc), true);
+        if (($history['code'] ?? '') !== '00' && $this->reLoginIfNeed($acc)) {
+            $history = json_decode((string) $this->get_lsgd($acc->refresh()), true);
+        }
+        if (($history['code'] ?? '') !== '00') {
+            return ['ok' => false, 'session_expired' => true, 'message' => (string) ($history['des'] ?? 'Phiên VCB hết hạn')];
+        }
+
+        $balance = json_decode((string) $this->getBalanceVcb($acc->refresh()), true);
+        if (($balance['code'] ?? '') !== '00' && $this->reLoginIfNeed($acc)) {
+            $balance = json_decode((string) $this->getBalanceVcb($acc->refresh()), true);
+        }
+
+        return [
+            'ok' => true,
+            'transactions' => is_array($history['transactions'] ?? null) ? $history['transactions'] : [],
+            'balance' => (int) str_replace(',', '', (string) data_get($balance, 'accountDetail.availBalance', 0)),
+            'account_name' => (string) ($acc->name ?? ''),
+            'raw' => $history,
+        ];
+    }
+
+    private function internalAcbSnapshotForScanner(int $accountId, int $limit): array
+    {
+        $acc = AccountAcb::whereKey($accountId)->first();
+        if (!$acc) {
+            return ['ok' => false, 'message' => 'Không tìm thấy tài khoản ACB'];
+        }
+
+        $history = json_decode((string) $this->getTransactionHistoryAcb($acc->stk, $acc->sessionId, $limit), true);
+        if ((int) ($history['codeStatus'] ?? 0) !== 200 && $this->acbReLoginIfNeed($acc)) {
+            $history = json_decode((string) $this->getTransactionHistoryAcb($acc->stk, $acc->refresh()->sessionId, $limit), true);
+        }
+        if ((int) ($history['codeStatus'] ?? 0) !== 200) {
+            return ['ok' => false, 'session_expired' => true, 'message' => (string) ($history['message'] ?? 'Phiên ACB hết hạn')];
+        }
+
+        $balancePayload = json_decode((string) $this->getBalanceAcb($acc->refresh()->sessionId), true);
+        $balance = 0;
+        $accountName = (string) ($acc->name ?? '');
+        foreach (($balancePayload['data'] ?? []) as $item) {
+            if ((string) ($item['accountNumber'] ?? '') === (string) $acc->stk) {
+                $balance = (int) str_replace(',', '', (string) ($item['balance'] ?? 0));
+                $accountName = (string) ($item['accountDescription'] ?? $accountName);
+                break;
+            }
+        }
+
+        return [
+            'ok' => true,
+            'transactions' => is_array($history['data'] ?? null) ? $history['data'] : [],
+            'balance' => $balance,
+            'account_name' => $accountName,
+            'raw' => $history,
+        ];
+    }
+
+    private function internalVpbankSnapshotForScanner(int $accountId, int $limit): array
+    {
+        $acc = AccountVpbank::whereKey($accountId)->first();
+        if (!$acc) {
+            return ['ok' => false, 'message' => 'Không tìm thấy tài khoản VPBank'];
+        }
+
+        $history = $this->getTransactionHistoryVpbank($acc, null, null);
+        if ((int) ($history['code'] ?? 0) !== 200 && $this->vpbankReLoginIfNeed($acc)) {
+            $history = $this->getTransactionHistoryVpbank($acc->refresh(), null, null);
+        }
+        if ((int) ($history['code'] ?? 0) !== 200) {
+            return ['ok' => false, 'session_expired' => true, 'message' => (string) ($history['message'] ?? 'Phiên VPBank hết hạn')];
+        }
+
+        $balance = $this->getBalanceVpbank($acc->refresh());
+
+        return [
+            'ok' => true,
+            'transactions' => array_slice(is_array($history['data']['transactions'] ?? null) ? $history['data']['transactions'] : [], 0, $limit),
+            'balance' => (int) ($balance['data']['balance'] ?? 0),
+            'account_name' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
+            'raw' => $history,
+        ];
+    }
+
+    private function internalTechcombankSnapshotForScanner(int $accountId, int $limit): array
+    {
+        $acc = AccountTechcombank::whereKey($accountId)->first();
+        if (!$acc) {
+            return ['ok' => false, 'message' => 'Không tìm thấy tài khoản Techcombank'];
+        }
+
+        $history = $this->getTransactionHistoryTechcombank($acc, null, null, $limit);
+        if ((int) ($history['code'] ?? 0) !== 200 && $this->techcombankRefreshIfNeed($acc)) {
+            $history = $this->getTransactionHistoryTechcombank($acc->refresh(), null, null, $limit);
+        }
+        if ((int) ($history['code'] ?? 0) !== 200) {
+            return ['ok' => false, 'session_expired' => true, 'message' => (string) ($history['message'] ?? 'Phiên Techcombank hết hạn')];
+        }
+
+        $balance = $this->getBalanceTechcombank($acc->refresh());
+
+        return [
+            'ok' => true,
+            'transactions' => is_array($history['data']['transactions'] ?? null) ? $history['data']['transactions'] : [],
+            'balance' => (int) ($balance['data']['balance'] ?? 0),
+            'account_name' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
+            'raw' => $history,
+        ];
+    }
+
+    private function internalMbbankSnapshotForScanner(int $accountId, int $limit): array
+    {
+        $acc = AccountMbbank::whereKey($accountId)->first();
+        if (!$acc) {
+            return ['ok' => false, 'message' => 'Không tìm thấy tài khoản MBBank'];
+        }
+
+        $history = $this->getTransactionHistoryMbbankWithSessionRetry($acc, null, null, $limit);
+        if ((int) ($history['code'] ?? 0) !== 200) {
+            return ['ok' => false, 'session_expired' => true, 'message' => (string) ($history['message'] ?? 'Phiên MBBank hết hạn')];
+        }
+
+        $balance = $this->getBalanceMbbankWithSessionRetry($acc->refresh());
+
+        return [
+            'ok' => true,
+            'transactions' => is_array($history['data']['transactions'] ?? null) ? $history['data']['transactions'] : [],
+            'balance' => (int) ($balance['data']['balance'] ?? 0),
+            'account_name' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
+            'raw' => $history,
+        ];
+    }
+
     private function isApiPackageExpired(?User $user): bool
     {
         if (!$user) {

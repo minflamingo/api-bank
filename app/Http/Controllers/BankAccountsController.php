@@ -133,10 +133,11 @@ class BankAccountsController extends Controller
 
     public function create(Request $request)
     {
+        $systemReceiver = $this->isSystemReceiverRequest($request);
         $defaultBank = in_array((string) $request->query('bank'), ['acb', 'vcb', 'vpbank', 'techcombank', 'mbbank'], true)
             ? (string) $request->query('bank')
             : 'acb';
-        $editAccount = $this->bankAccountEditDefaults($request, $defaultBank);
+        $editAccount = $this->bankAccountEditDefaults($request, $defaultBank, $systemReceiver);
         if ($editAccount) {
             $defaultBank = (string) $editAccount['bank_code'];
         }
@@ -148,6 +149,7 @@ class BankAccountsController extends Controller
             'pendingTechcombank' => (array) session('bank_accounts_techcombank_pending', []),
             'editAccount' => $editAccount,
             'accountLimit' => ApiPackage::userLimit(Auth::user()),
+            'systemReceiver' => $systemReceiver,
         ]);
     }
 
@@ -156,6 +158,13 @@ class BankAccountsController extends Controller
         $step = (string) $request->input('step', 'init');
 
         if ($step === 'otp') {
+            $systemReceiver = $this->isSystemReceiverRequest($request)
+                || $this->pendingBankAccountIsSystemReceiver((string) $request->input('bank_code'));
+            if ($systemReceiver) {
+                $request->merge(['system_receiver' => 1]);
+            }
+            $redirectUrl = $this->bankAccountsRedirectUrl($systemReceiver);
+
             $data = $request->validate([
                 'step' => ['required', Rule::in(['otp'])],
                 'bank_code' => ['required', Rule::in(['vcb', 'vpbank', 'techcombank'])],
@@ -181,7 +190,7 @@ class BankAccountsController extends Controller
             });
             $ok = (string) ($payload['status'] ?? '') === '2';
             if ($ok) {
-                $this->reactivateCurrentAccount($data['bank_code'], $data['username'], $data['account_no']);
+                $this->reactivateCurrentAccount($data['bank_code'], $data['username'], $data['account_no'], $systemReceiver);
             }
 
             if ($ok) {
@@ -195,9 +204,15 @@ class BankAccountsController extends Controller
             return $this->respondConnect($request, [
                 'ok' => $ok,
                 'message' => (string) ($payload['msg'] ?? ($ok ? 'Đã lưu tài khoản ngân hàng.' : 'Không xác thực được OTP.')),
-                'redirect_url' => route('bank.accounts.index'),
+                'redirect_url' => $redirectUrl,
             ], $ok ? 200 : 422);
         }
+
+        $systemReceiver = $this->isSystemReceiverRequest($request);
+        if ($systemReceiver) {
+            $request->merge(['system_receiver' => 1]);
+        }
+        $redirectUrl = $this->bankAccountsRedirectUrl($systemReceiver);
 
         $data = $request->validate([
             'step' => ['required', Rule::in(['init'])],
@@ -217,13 +232,13 @@ class BankAccountsController extends Controller
             $payload = $this->payloadFrom($payment->acbLogin($request));
             $ok = (string) ($payload['status'] ?? '') === '2';
             if ($ok) {
-                $this->reactivateCurrentAccount('acb', $data['username'], $data['account_no']);
+                $this->reactivateCurrentAccount('acb', $data['username'], $data['account_no'], $systemReceiver);
             }
 
             return $this->respondConnect($request, [
                 'ok' => $ok,
                 'message' => (string) ($payload['msg'] ?? ($ok ? 'Đã thêm tài khoản ACB.' : 'Không thêm được tài khoản ACB.')),
-                'redirect_url' => route('bank.accounts.index'),
+                'redirect_url' => $redirectUrl,
             ], $ok ? 200 : 422);
         }
 
@@ -233,12 +248,12 @@ class BankAccountsController extends Controller
 
             if ($status === '3') {
                 session()->forget('bank_accounts_vpbank_pending');
-                $this->reactivateCurrentAccount('vpbank', $data['username'], $data['account_no']);
+                $this->reactivateCurrentAccount('vpbank', $data['username'], $data['account_no'], $systemReceiver);
 
                 return $this->respondConnect($request, [
                     'ok' => true,
                     'message' => (string) ($payload['msg'] ?? 'Đăng nhập VPBank thành công.'),
-                    'redirect_url' => route('bank.accounts.index'),
+                    'redirect_url' => $redirectUrl,
                 ]);
             }
 
@@ -247,6 +262,7 @@ class BankAccountsController extends Controller
                     'username' => $data['username'],
                     'password' => $data['password'],
                     'account_no' => $data['account_no'],
+                    'system_receiver' => $systemReceiver,
                 ]);
 
                 return $this->respondConnect($request, [
@@ -273,6 +289,7 @@ class BankAccountsController extends Controller
                     'password' => (string) ($data['password'] ?? ''),
                     'account_no' => $data['account_no'],
                     'auth_url' => (string) ($payload['auth_url'] ?? ''),
+                    'system_receiver' => $systemReceiver,
                 ]);
 
                 return $this->respondConnect($request, [
@@ -295,13 +312,13 @@ class BankAccountsController extends Controller
             $payload = $this->payloadFrom($payment->mbbankLogin($request));
             $ok = (string) ($payload['status'] ?? '') === '2';
             if ($ok) {
-                $this->reactivateCurrentAccount('mbbank', $data['username'], $data['account_no']);
+                $this->reactivateCurrentAccount('mbbank', $data['username'], $data['account_no'], $systemReceiver);
             }
 
             return $this->respondConnect($request, [
                 'ok' => $ok,
                 'message' => (string) ($payload['msg'] ?? ($ok ? 'Đã thêm tài khoản MBBank.' : 'Không thêm được tài khoản MBBank.')),
-                'redirect_url' => route('bank.accounts.index'),
+                'redirect_url' => $redirectUrl,
             ], $ok ? 200 : 422);
         }
 
@@ -310,12 +327,12 @@ class BankAccountsController extends Controller
 
         if ($status === '3') {
             session()->forget('bank_accounts_vcb_pending');
-            $this->reactivateCurrentAccount('vcb', $data['username'], $data['account_no']);
+            $this->reactivateCurrentAccount('vcb', $data['username'], $data['account_no'], $systemReceiver);
 
             return $this->respondConnect($request, [
                 'ok' => true,
                 'message' => (string) ($payload['msg'] ?? 'Đăng nhập Vietcombank thành công.'),
-                'redirect_url' => route('bank.accounts.index'),
+                'redirect_url' => $redirectUrl,
             ]);
         }
 
@@ -324,6 +341,7 @@ class BankAccountsController extends Controller
                 'username' => $data['username'],
                 'password' => $data['password'],
                 'account_no' => $data['account_no'],
+                'system_receiver' => $systemReceiver,
             ]);
 
             return $this->respondConnect($request, [
@@ -431,10 +449,10 @@ class BankAccountsController extends Controller
         return $query->where('id', $id)->where('user_id', $userId)->first();
     }
 
-    private function reactivateCurrentAccount(string $bank, string $username, string $accountNo): void
+    private function reactivateCurrentAccount(string $bank, string $username, string $accountNo, bool $systemReceiver = false): void
     {
         $userId = Auth::id();
-        if (!$userId) {
+        if (!$userId && !$systemReceiver) {
             return;
         }
 
@@ -448,7 +466,8 @@ class BankAccountsController extends Controller
             default => AccountVietcombank::query()->where('username', $username),
         };
 
-        $model = $query->where('user_id', $userId)->orderByDesc('id')->first();
+        $query = $systemReceiver ? $query->whereNull('user_id') : $query->where('user_id', $userId);
+        $model = $query->orderByDesc('id')->first();
         if ($model) {
             $this->setBankAccountActive($model, true, null);
         }
@@ -544,8 +563,14 @@ class BankAccountsController extends Controller
         }
 
         if (!empty($payload['needs_otp'])) {
+            $routeParams = ['bank' => $payload['bank_code'] ?? 'vcb', 'otp' => 1];
+            if ($this->isSystemReceiverRequest($request)
+                || $this->pendingBankAccountIsSystemReceiver((string) ($payload['bank_code'] ?? ''))) {
+                $routeParams['system_receiver'] = 1;
+            }
+
             return redirect()
-                ->route('bank.accounts.create', ['bank' => $payload['bank_code'] ?? 'vcb', 'otp' => 1])
+                ->route('bank.accounts.create', $routeParams)
                 ->with('warning', (string) $payload['message']);
         }
 
@@ -557,6 +582,37 @@ class BankAccountsController extends Controller
         return back()
             ->withInput($request->except('password'))
             ->withErrors(['bank' => (string) ($payload['message'] ?? 'Thao tác thất bại.')]);
+    }
+
+    private function isSystemReceiverRequest(Request $request): bool
+    {
+        return $request->boolean('system_receiver')
+            && Auth::check()
+            && (int) (Auth::user()->role ?? 0) === 1;
+    }
+
+    private function pendingBankAccountIsSystemReceiver(string $bank): bool
+    {
+        $sessionKey = match ($bank) {
+            'vpbank' => 'bank_accounts_vpbank_pending',
+            'techcombank' => 'bank_accounts_techcombank_pending',
+            default => 'bank_accounts_vcb_pending',
+        };
+
+        $pending = (array) session($sessionKey, []);
+
+        return !empty($pending['system_receiver'])
+            && Auth::check()
+            && (int) (Auth::user()->role ?? 0) === 1;
+    }
+
+    private function bankAccountsRedirectUrl(bool $systemReceiver): string
+    {
+        if ($systemReceiver) {
+            return route('admin.recharge-settings.edit', ['tab' => 'accounts']) . '#accounts';
+        }
+
+        return route('bank.accounts.index');
     }
 
     private function payloadFrom($response): array
@@ -912,22 +968,28 @@ class BankAccountsController extends Controller
         ];
     }
 
-    private function bankAccountEditDefaults(Request $request, string $bank): ?array
+    private function bankAccountEditDefaults(Request $request, string $bank, bool $systemReceiver = false): ?array
     {
         $editId = (int) $request->query('edit', 0);
         $userId = Auth::id();
-        if ($editId <= 0 || !$userId) {
+        if ($editId <= 0 || (!$userId && !$systemReceiver)) {
             return null;
         }
 
-        $row = match ($bank) {
-            'acb' => AccountAcb::where('id', $editId)->where('user_id', $userId)->first(),
-            'vcb' => AccountVietcombank::where('id', $editId)->where('user_id', $userId)->first(),
-            'vpbank' => AccountVpbank::where('id', $editId)->where('user_id', $userId)->first(),
-            'techcombank' => AccountTechcombank::where('id', $editId)->where('user_id', $userId)->first(),
-            'mbbank' => AccountMbbank::where('id', $editId)->where('user_id', $userId)->first(),
+        $query = match ($bank) {
+            'acb' => AccountAcb::where('id', $editId),
+            'vcb' => AccountVietcombank::where('id', $editId),
+            'vpbank' => AccountVpbank::where('id', $editId),
+            'techcombank' => AccountTechcombank::where('id', $editId),
+            'mbbank' => AccountMbbank::where('id', $editId),
             default => null,
         };
+
+        if (!$query) {
+            return null;
+        }
+
+        $row = ($systemReceiver ? $query->whereNull('user_id') : $query->where('user_id', $userId))->first();
 
         if (!$row) {
             return null;

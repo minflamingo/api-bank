@@ -229,26 +229,39 @@
   $currentBank = old('bank_code', $hasPendingOtp ? $pendingBank : $defaultBank);
   $formSeed = $hasPendingOtp ? $pending : ($editAccount ?: []);
   $isEditing = !$hasPendingOtp && !empty($editAccount);
+  $systemReceiver = (bool) ($systemReceiver ?? false);
+  $indexUrl = $systemReceiver ? route('admin.recharge-settings.edit', ['tab' => 'accounts']) . '#accounts' : route('bank.accounts.index');
 @endphp
 
 <div id="bankCreatePage"
      class="bank-create-page"
      data-store-url="{{ route('bank.accounts.store') }}"
-     data-index-url="{{ route('bank.accounts.index') }}"
+     data-index-url="{{ $indexUrl }}"
      data-has-pending-otp="{{ $hasPendingOtp ? '1' : '0' }}"
      data-pending-bank="{{ $pendingBank ?: '' }}"
+     data-system-receiver="{{ $systemReceiver ? '1' : '0' }}"
      data-edit-mode="{{ $isEditing ? '1' : '0' }}">
   <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
     <div>
-      <div class="text-muted small mb-1">API ngân hàng</div>
-      <h4 class="mb-1">{{ $isEditing ? 'Cập nhật kết nối ngân hàng' : 'Kết nối tài khoản ngân hàng' }}</h4>
+      <div class="text-muted small mb-1">{{ $systemReceiver ? 'Super Admin' : 'API ngân hàng' }}</div>
+      <h4 class="mb-1">
+        @if($systemReceiver)
+          {{ $isEditing ? 'Cập nhật account nhận nạp' : 'Kết nối account nhận nạp hệ thống' }}
+        @else
+          {{ $isEditing ? 'Cập nhật kết nối ngân hàng' : 'Kết nối tài khoản ngân hàng' }}
+        @endif
+      </h4>
       <div class="text-muted">
-        {{ $isEditing ? 'Nhập lại mật khẩu và xác thực để làm mới phiên API cho tài khoản hiện có.' : 'Thêm ACB, Vietcombank, VPBank, Techcombank hoặc MBBank để tạo API số dư và giao dịch.' }}
+        @if($systemReceiver)
+          Account này lưu ở nhóm hệ thống để làm tài khoản nhận nạp, không tính vào giới hạn gói của user.
+        @else
+          {{ $isEditing ? 'Nhập lại mật khẩu và xác thực để làm mới phiên API cho tài khoản hiện có.' : 'Thêm ACB, Vietcombank, VPBank, Techcombank hoặc MBBank để tạo API số dư và giao dịch.' }}
+        @endif
       </div>
     </div>
     <div class="page-actions">
-      <a class="btn btn-outline-secondary btn-touch" href="{{ route('bank.accounts.index') }}">
-        <i class="bx bx-arrow-back"></i> Danh sách
+      <a class="btn btn-outline-secondary btn-touch" href="{{ $indexUrl }}">
+        <i class="bx bx-arrow-back"></i> {{ $systemReceiver ? 'Cấu hình nhận nạp' : 'Danh sách' }}
       </a>
     </div>
   </div>
@@ -307,6 +320,9 @@
           <form id="bankConnectForm" method="POST" action="{{ route('bank.accounts.store') }}">
             @csrf
             <input type="hidden" name="step" value="{{ $hasPendingOtp ? 'otp' : 'init' }}" data-step-input>
+            @if($systemReceiver)
+              <input type="hidden" name="system_receiver" value="1">
+            @endif
 
             <div class="mb-4">
               <label class="form-label fw-semibold">Chọn ngân hàng</label>
@@ -493,7 +509,9 @@
 
           <div class="aside-block">
             <div class="fw-semibold mb-2">Giới hạn</div>
-            <div class="text-muted small">Gói hiện tại cho phép tối đa {{ $accountLimit }} tài khoản ngân hàng.</div>
+            <div class="text-muted small">
+              {{ $systemReceiver ? 'Account nhận nạp hệ thống không tính vào giới hạn gói khách hàng.' : 'Gói hiện tại cho phép tối đa ' . $accountLimit . ' tài khoản ngân hàng.' }}
+            </div>
           </div>
         </div>
       </div>
@@ -527,6 +545,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const passwordField = page.querySelector('[data-password-field]');
   const passwordInput = document.getElementById('bankPassword');
   const isEditMode = page.dataset.editMode === '1';
+  const isSystemReceiver = page.dataset.systemReceiver === '1';
   const pendingTechcombankAuthUrl = @json($pendingBank === 'techcombank' ? ($pending['auth_url'] ?? '') : '');
   const bankNames = {
     acb: 'ACB',
@@ -620,6 +639,10 @@ document.addEventListener('DOMContentLoaded', function () {
       account_no: document.getElementById('bankAccountNo').value.trim(),
       password: document.getElementById('bankPassword').value
     };
+
+    if (isSystemReceiver) {
+      payload.system_receiver = 1;
+    }
 
     if (stepInput.value === 'otp') {
       payload.bank_code = selectedBank();

@@ -617,8 +617,9 @@ class PaymentController extends Controller
         }
 
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
+        $ownerId = $isSystemReceiver ? null : (int) $user->id;
         $accountLimit = ApiPackage::userLimit($user);
-        $existingVcb = AccountVietcombank::where('user_id', $user->id)->where('username', $account)->first();
+        $existingVcb = AccountVietcombank::where('user_id', $ownerId)->where('username', $account)->first();
         $exists = (bool) $existingVcb;
         if (!$isSystemReceiver && !$exists && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
             return response()->json([
@@ -658,7 +659,7 @@ class PaymentController extends Controller
             // Ko cần OTP
             AccountVietcombank::updateOrCreate(
                 [
-                    'user_id'  => $user->id,
+                    'user_id'  => $ownerId,
                     'username' => $account,
                 ],
                 [
@@ -716,7 +717,7 @@ class PaymentController extends Controller
 
             AccountVietcombank::updateOrCreate(
                 [
-                    'user_id'  => $user->id,
+                    'user_id'  => $ownerId,
                     'username' => $account,
                 ],
                 [
@@ -759,7 +760,10 @@ class PaymentController extends Controller
             return response()->json(['status'=>'1','msg'=>'Thiếu thông tin OTP']);
         }
 
-        $data = AccountVietcombank::where('user_id', $user->id)
+        $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
+        $ownerId = $isSystemReceiver ? null : (int) $user->id;
+
+        $data = AccountVietcombank::where('user_id', $ownerId)
                 ->where('username', $account)
                 ->first();
         if (!$data) {
@@ -1424,9 +1428,11 @@ class PaymentController extends Controller
             ]);
         }
 
+        $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
+        $ownerId = $isSystemReceiver ? null : (int) $user->id;
         $accountLimit = ApiPackage::userLimit($user);
-        $existingVpbank = AccountVpbank::where('user_id', $user->id)->where('username', $account)->first();
-        if (!$existingVpbank && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
+        $existingVpbank = AccountVpbank::where('user_id', $ownerId)->where('username', $account)->first();
+        if (!$isSystemReceiver && !$existingVpbank && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
             return response()->json([
                 'status' => '1',
                 'msg'    => $this->accountLimitMessage($accountLimit)
@@ -1443,7 +1449,7 @@ class PaymentController extends Controller
 
         $acc = AccountVpbank::updateOrCreate(
             [
-                'user_id' => $user->id,
+                'user_id' => $ownerId,
                 'username' => $account,
             ],
             [
@@ -1489,7 +1495,10 @@ class PaymentController extends Controller
             return response()->json(['status' => '1', 'msg' => 'Thiếu tài khoản hoặc OTP']);
         }
 
-        $acc = AccountVpbank::where('user_id', $user->id)->where('username', $account)->first();
+        $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
+        $ownerId = $isSystemReceiver ? null : (int) $user->id;
+
+        $acc = AccountVpbank::where('user_id', $ownerId)->where('username', $account)->first();
         if (!$acc) {
             return response()->json(['status' => '1', 'msg' => 'Không tìm thấy phiên VPBank đang chờ OTP']);
         }
@@ -2495,8 +2504,9 @@ class PaymentController extends Controller
         }
 
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
+        $ownerId = $isSystemReceiver ? null : (int) $user->id;
         $accountLimit = ApiPackage::userLimit($user);
-        $existing = AccountMbbank::where('user_id', $user->id)->where('account', $stk)->first();
+        $existing = AccountMbbank::where('user_id', $ownerId)->where('account', $stk)->first();
         if (!$isSystemReceiver && !$existing && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
             return response()->json([
                 'status' => '1',
@@ -2529,7 +2539,7 @@ class PaymentController extends Controller
 
         AccountMbbank::updateOrCreate(
             [
-                'user_id' => $user->id,
+                'user_id' => $ownerId,
                 'account' => $stk,
             ],
             [
@@ -3191,8 +3201,9 @@ class PaymentController extends Controller
         }
 
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
+        $ownerId = $isSystemReceiver ? null : (int) $user->id;
         $accountLimit = ApiPackage::userLimit($user);
-        $existing = AccountTechcombank::where('user_id', $user->id)->where('account', $stk)->first();
+        $existing = AccountTechcombank::where('user_id', $ownerId)->where('account', $stk)->first();
         if (!$isSystemReceiver && !$existing && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
             return response()->json([
                 'status' => '1',
@@ -3210,7 +3221,7 @@ class PaymentController extends Controller
 
         AccountTechcombank::updateOrCreate(
             [
-                'user_id' => $user->id,
+                'user_id' => $ownerId,
                 'account' => $stk,
             ],
             [
@@ -3254,7 +3265,10 @@ class PaymentController extends Controller
             return response()->json(['status' => '1', 'msg' => 'Thiếu phiên xác nhận Techcombank']);
         }
 
-        $acc = AccountTechcombank::where('user_id', $user->id)
+        $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
+        $ownerId = $isSystemReceiver ? null : (int) $user->id;
+
+        $acc = AccountTechcombank::where('user_id', $ownerId)
             ->where('username', $account)
             ->where('account', $stk)
             ->first();
@@ -4366,10 +4380,12 @@ class PaymentController extends Controller
             ]);
         }
 
+        $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
+        $ownerId = $isSystemReceiver ? null : (int) $user->id;
         $accountLimit = ApiPackage::userLimit($user);
-        $existingAcb = AccountAcb::where('user_id', $user->id)->where('phone', $account)->first();
+        $existingAcb = AccountAcb::where('user_id', $ownerId)->where('phone', $account)->first();
         $exists = (bool) $existingAcb;
-        if (!$exists && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
+        if (!$isSystemReceiver && !$exists && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
             return response()->json([
                 'status' => '1',
                 'msg'    => $this->accountLimitMessage($accountLimit)
@@ -4389,7 +4405,7 @@ class PaymentController extends Controller
 
             AccountAcb::updateOrCreate(
                 [
-                    'user_id' => $user->id,
+                    'user_id' => $ownerId,
                     'phone'   => $account,
                 ],
                 [

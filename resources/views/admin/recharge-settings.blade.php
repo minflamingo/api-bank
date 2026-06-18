@@ -424,6 +424,7 @@
       default => !empty($selectedReceiver->sessionId),
   };
   $quickCount = count(array_filter(array_map('trim', explode(',', (string) $quickAmounts))));
+  $systemReceiverCreateUrl = route('bank.accounts.create', ['system_receiver' => 1]);
   $pendingVcb = $pendingVcb ?? [];
   $pendingVpbank = $pendingVpbank ?? [];
   $pendingTechcombank = $pendingTechcombank ?? [];
@@ -435,8 +436,8 @@
       ? 'vpbank'
       : ((!empty($pendingVcb) || old('username') || old('account_no')) ? 'vcb' : 'acb')));
   $activeRechargeTab = request('tab');
-  if (!in_array($activeRechargeTab, ['settings', 'accounts', 'add'], true)) {
-      $activeRechargeTab = (!empty($pendingVcb) || !empty($pendingVpbank) || !empty($pendingTechcombank) || old('phone') || old('stk') || old('username') || old('account_no') || old('vpbank_username') || old('vpbank_account_no') || old('techcombank_username') || old('techcombank_account_no') || old('mbbank_username') || old('mbbank_account_no')) ? 'add' : 'settings';
+  if (!in_array($activeRechargeTab, ['settings', 'accounts'], true)) {
+      $activeRechargeTab = 'settings';
   }
 @endphp
 
@@ -509,9 +510,9 @@
       </button>
     </li>
     <li class="nav-item flex-fill" role="presentation">
-      <button class="nav-link {{ $activeRechargeTab === 'add' ? 'active' : '' }}" type="button" role="tab" aria-selected="{{ $activeRechargeTab === 'add' ? 'true' : 'false' }}" data-recharge-tab="add">
-        <i class="bx bx-plus-circle"></i> Thêm account
-      </button>
+      <a class="nav-link" href="{{ $systemReceiverCreateUrl }}">
+        <i class="bx bx-plus-circle"></i> Thêm bằng Bank Accounts
+      </a>
     </li>
   </ul>
 
@@ -647,7 +648,7 @@
                 @if($acbReceiverAccounts->isEmpty() && $vcbReceiverAccounts->isEmpty() && $vpbankReceiverAccounts->isEmpty() && $techcombankReceiverAccounts->isEmpty() && $mbbankReceiverAccounts->isEmpty())
                   <div class="alert alert-warning mt-3 mb-0" role="alert">
                     Chưa có account ngân hàng nhận nạp hệ thống.
-                    <button class="btn btn-sm btn-warning ms-sm-2 mt-2 mt-sm-0" type="button" data-recharge-tab-jump="add">Thêm account</button>
+                    <a class="btn btn-sm btn-warning ms-sm-2 mt-2 mt-sm-0" href="{{ $systemReceiverCreateUrl }}">Thêm account</a>
                   </div>
                 @endif
               </div>
@@ -702,9 +703,9 @@
             <h5 class="mb-1">Account hệ thống</h5>
             <div class="text-muted small">ACB: {{ number_format($acbReceiverAccounts->count()) }} · VCB: {{ number_format($vcbReceiverAccounts->count()) }} · VPBank: {{ number_format($vpbankReceiverAccounts->count()) }} · Techcombank: {{ number_format($techcombankReceiverAccounts->count()) }} · MBBank: {{ number_format($mbbankReceiverAccounts->count()) }}</div>
           </div>
-          <button class="btn btn-outline-primary btn-touch align-self-sm-start" type="button" data-recharge-tab-jump="add">
+          <a class="btn btn-outline-primary btn-touch align-self-sm-start" href="{{ $systemReceiverCreateUrl }}">
             <i class="bx bx-plus"></i> Thêm account
-          </button>
+          </a>
         </div>
         <div class="panel-body">
           <div class="account-list">
@@ -722,9 +723,9 @@
                     @endif
                     <span class="status-chip {{ $account->sessionId ? 'status-ok' : 'status-warn' }}">{{ $account->sessionId ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-edit-toggle="acb-{{ $account->id }}">
+                      <a class="btn btn-sm btn-outline-primary btn-touch" href="{{ route('bank.accounts.create', ['bank' => 'acb', 'edit' => $account->id, 'system_receiver' => 1]) }}">
                         <i class="bx bx-edit"></i> Sửa
-                      </button>
+                      </a>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'acb', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
                         @method('DELETE')
@@ -781,9 +782,9 @@
                     @endif
                     <span class="status-chip {{ $account->session_id ? 'status-ok' : 'status-warn' }}">{{ $account->session_id ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-edit-toggle="vcb-{{ $account->id }}">
+                      <a class="btn btn-sm btn-outline-primary btn-touch" href="{{ route('bank.accounts.create', ['bank' => 'vcb', 'edit' => $account->id, 'system_receiver' => 1]) }}">
                         <i class="bx bx-edit"></i> Sửa
-                      </button>
+                      </a>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'vcb', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
                         @method('DELETE')
@@ -840,9 +841,9 @@
                     @endif
                     <span class="status-chip {{ $account->token_key ? 'status-ok' : 'status-warn' }}">{{ $account->token_key ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-edit-toggle="vpbank-{{ $account->id }}">
+                      <a class="btn btn-sm btn-outline-primary btn-touch" href="{{ route('bank.accounts.create', ['bank' => 'vpbank', 'edit' => $account->id, 'system_receiver' => 1]) }}">
                         <i class="bx bx-edit"></i> Sửa
-                      </button>
+                      </a>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'vpbank', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
                         @method('DELETE')
@@ -899,9 +900,9 @@
                     @endif
                     <span class="status-chip {{ $account->refresh_token ? 'status-ok' : 'status-warn' }}">{{ $account->refresh_token ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-edit-toggle="techcombank-{{ $account->id }}">
+                      <a class="btn btn-sm btn-outline-primary btn-touch" href="{{ route('bank.accounts.create', ['bank' => 'techcombank', 'edit' => $account->id, 'system_receiver' => 1]) }}">
                         <i class="bx bx-edit"></i> Sửa
-                      </button>
+                      </a>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'techcombank', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
                         @method('DELETE')
@@ -958,9 +959,9 @@
                     @endif
                     <span class="status-chip {{ $account->session_id ? 'status-ok' : 'status-warn' }}">{{ $account->session_id ? 'Session OK' : 'Thiếu session' }}</span>
                     <div class="account-actions">
-                      <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-edit-toggle="mbbank-{{ $account->id }}">
+                      <a class="btn btn-sm btn-outline-primary btn-touch" href="{{ route('bank.accounts.create', ['bank' => 'mbbank', 'edit' => $account->id, 'system_receiver' => 1]) }}">
                         <i class="bx bx-edit"></i> Sửa
-                      </button>
+                      </a>
                       <form method="POST" action="{{ route('admin.recharge-settings.account.destroy', ['bank' => 'mbbank', 'id' => $account->id]) }}#accounts" data-delete-account>
                         @csrf
                         @method('DELETE')
@@ -1007,9 +1008,9 @@
               <div class="text-center text-muted py-4">
                 Chưa có account hệ thống.
                 <div class="mt-3">
-                  <button class="btn btn-primary btn-touch" type="button" data-recharge-tab-jump="add">
+                  <a class="btn btn-primary btn-touch" href="{{ $systemReceiverCreateUrl }}">
                     <i class="bx bx-plus"></i> Thêm account nhận nạp
-                  </button>
+                  </a>
                 </div>
               </div>
             @endif
@@ -1456,7 +1457,7 @@
   });
 
   const initialHashTab = window.location.hash.replace('#', '');
-  if (['settings', 'accounts', 'add'].includes(initialHashTab)) {
+  if (['settings', 'accounts'].includes(initialHashTab)) {
     setRechargeTab(initialHashTab, false);
   }
 

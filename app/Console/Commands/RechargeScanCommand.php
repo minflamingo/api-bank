@@ -16,7 +16,10 @@ class RechargeScanCommand extends Command
 
     public function handle(): int
     {
+        $sleepSeconds = max(1, min(60, (int) $this->option('sleep')));
+
         do {
+            $loopStartedAt = microtime(true);
             $message = $this->withLock(fn () => $this->scanActiveReceiver());
             $this->line(json_encode([
                 'time' => now()->toDateTimeString(),
@@ -27,7 +30,10 @@ class RechargeScanCommand extends Command
                 break;
             }
 
-            sleep(max(1, min(60, (int) $this->option('sleep'))));
+            $remainingMicroseconds = (int) max(0, ($sleepSeconds - (microtime(true) - $loopStartedAt)) * 1000000);
+            if ($remainingMicroseconds > 0) {
+                usleep($remainingMicroseconds);
+            }
         } while (true);
 
         return self::SUCCESS;

@@ -100,7 +100,91 @@
             </tr>
           </thead>
           <tbody>
-            @forelse($endpoints as $endpoint)
+            <tr class="table-light">
+              <td>
+                <div class="fw-semibold">Quanly.3W nội bộ</div>
+                <div class="text-muted small text-break">{{ $quanlyUrl ?: 'Chưa nhập receiver Quanly' }}</div>
+                <div class="font-monospace small text-muted text-break">{{ !empty($quanly['secret_configured']) ? $quanlySecret : 'Chưa cấu hình secret HMAC' }}</div>
+                @if($quanlyLink)
+                  <div class="small text-muted mt-1">Quanly user #{{ (int) $quanlyLink->quanly_user_id }} · tenant #{{ (int) ($quanlyLink->quanly_tenant_id ?? 0) }}</div>
+                @else
+                  <div class="small text-warning mt-1">Chưa link user Quanly</div>
+                @endif
+              </td>
+              <td>
+                <div class="d-flex flex-wrap gap-1">
+                  @forelse($quanlyEvents ?: [] as $event)
+                    <span class="badge bg-label-primary font-monospace">{{ $event }}</span>
+                  @empty
+                    <span class="text-muted small">Chưa chọn event.</span>
+                  @endforelse
+                </div>
+              </td>
+              <td>
+                <div class="d-flex flex-wrap gap-1 mb-1">
+                  <span class="badge bg-label-{{ $quanlySetting ? 'info' : 'secondary' }}">{{ $quanlySetting ? 'MySQL' : 'Chưa lưu' }}</span>
+                  <span class="badge bg-label-{{ !empty($quanly['enabled']) ? 'success' : 'danger' }}">{{ !empty($quanly['enabled']) ? 'Bật' : 'Tắt' }}</span>
+                  <span class="badge bg-label-{{ !empty($quanlyLink) ? 'primary' : 'secondary' }}">{{ !empty($quanlyLink) ? 'Đã link' : 'Chưa link' }}</span>
+                </div>
+                <div class="small text-muted">
+                  Delivery {{ number_format((int) ($quanly['deliveries_delivered'] ?? 0)) }}/{{ number_format((int) ($quanly['deliveries_total'] ?? 0)) }}
+                  · Pending {{ number_format((int) ($quanly['deliveries_pending'] ?? 0)) }}
+                  · Lỗi {{ number_format((int) ($quanly['deliveries_failed'] ?? 0)) }}
+                </div>
+                @if($quanlyLast)
+                  <div class="small text-muted mt-1">
+                    Gần nhất: <span class="font-monospace">{{ $quanlyLast->event }}</span>
+                    · HTTP {{ $quanlyLast->response_status ?: '—' }}
+                    · {{ $formatTime($quanlyLast->delivered_at ?: $quanlyLast->failed_at ?: $quanlyLast->created_at) }}
+                  </div>
+                  @if($quanlyLast->last_error)
+                    <div class="small text-danger mt-1">{{ $quanlyLast->last_error }}</div>
+                  @endif
+                @endif
+              </td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#quanlyWebhookEdit">
+                  <i class="bx bx-edit"></i>
+                </button>
+              </td>
+            </tr>
+            <tr class="collapse" id="quanlyWebhookEdit">
+              <td colspan="4">
+                <form class="row g-3" method="POST" action="{{ route('client.webhooks.quanly.update') }}">
+                  @csrf
+                  @method('PUT')
+                  <div class="col-md-8">
+                    <label class="form-label">Receiver Quanly</label>
+                    <input class="form-control font-monospace" name="quanly_url" value="{{ $quanlyUrl }}" placeholder="https://quanly.3w.com.vn/webhooks/apibank/transactions">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Secret HMAC</label>
+                    <input class="form-control font-monospace" name="quanly_secret" value="{{ $quanlySecret }}" placeholder="whsec_...">
+                  </div>
+                  <div class="col-12">
+                    <div class="row g-2">
+                      @foreach($events as $event)
+                        <div class="col-md-4">
+                          <label class="form-check border rounded p-2 h-100">
+                            <input class="form-check-input ms-0 me-2" type="checkbox" name="quanly_events[]" value="{{ $event }}" @checked(in_array($event, $quanlyEvents ?: [], true))>
+                            <span class="form-check-label font-monospace small">{{ $event }}</span>
+                          </label>
+                        </div>
+                      @endforeach
+                    </div>
+                  </div>
+                  <div class="col-12 d-flex justify-content-between">
+                    <label class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" name="quanly_is_active" value="1" @checked($quanlyActive)>
+                      <span class="form-check-label">Bật liên kết Quanly cho user này</span>
+                    </label>
+                    <button class="btn btn-primary" type="submit">Lưu Quanly</button>
+                  </div>
+                </form>
+              </td>
+            </tr>
+
+            @foreach($endpoints as $endpoint)
               <tr>
                 <td>
                   <div class="fw-semibold">{{ $endpoint->name }}</div>
@@ -170,120 +254,13 @@
                   </form>
                 </td>
               </tr>
-            @empty
-              <tr>
-                <td colspan="4" class="text-center text-muted py-5">Chưa có webhook endpoint.</td>
-              </tr>
-            @endforelse
+            @endforeach
           </tbody>
         </table>
       </div>
       @if($endpoints->hasPages())
         <div class="card-footer">{{ $endpoints->links() }}</div>
       @endif
-    </div>
-  </div>
-</div>
-
-<div class="card mt-4">
-  <div class="card-header d-flex flex-column flex-lg-row justify-content-between gap-2">
-    <div>
-      <div class="text-muted small mb-1">Cài đặt riêng tài khoản này</div>
-      <h5 class="mb-1">Liên kết Quanly.3W</h5>
-      <div class="text-muted">APIBank sẽ đẩy giao dịch mới sang receiver Quanly theo cấu hình lưu trong MySQL của user hiện tại.</div>
-    </div>
-    <div class="d-flex flex-wrap gap-1 align-items-start">
-      <span class="badge bg-label-{{ $quanlySetting ? 'info' : 'secondary' }}">
-        {{ $quanlySetting ? 'Đã lưu MySQL' : 'Chưa lưu MySQL' }}
-      </span>
-      <span class="badge bg-label-{{ !empty($quanly['enabled']) ? 'success' : 'danger' }}">
-        {{ !empty($quanly['enabled']) ? 'Đang bật' : 'Đang tắt' }}
-      </span>
-      <span class="badge bg-label-{{ !empty($quanlyLink) ? 'primary' : 'secondary' }}">
-        {{ !empty($quanlyLink) ? 'Đã liên kết user' : 'Chưa link user' }}
-      </span>
-    </div>
-  </div>
-  <div class="card-body">
-    <div class="row g-4">
-      <div class="col-xl-6">
-        <form method="POST" action="{{ route('client.webhooks.quanly.update') }}" class="d-grid gap-3">
-          @csrf
-          @method('PUT')
-          <div>
-            <label class="form-label">Receiver Quanly</label>
-            <input class="form-control font-monospace" name="quanly_url" value="{{ $quanlyUrl }}" placeholder="https://quanly.3w.com.vn/webhooks/apibank/transactions">
-          </div>
-          <div>
-            <label class="form-label">Secret HMAC</label>
-            <input class="form-control font-monospace" name="quanly_secret" value="{{ $quanlySecret }}" placeholder="whsec_...">
-            <div class="form-text">Secret này phải trùng với cấu hình verify webhook bên Quanly.</div>
-          </div>
-          <div>
-            <label class="form-label d-block">Event gửi sang Quanly</label>
-            <div class="row g-2">
-              @foreach($events as $event)
-                <div class="col-md-6">
-                  <label class="form-check border rounded p-2 h-100">
-                    <input class="form-check-input ms-0 me-2" type="checkbox" name="quanly_events[]" value="{{ $event }}" @checked(in_array($event, $quanlyEvents ?: [], true))>
-                    <span class="form-check-label font-monospace small">{{ $event }}</span>
-                  </label>
-                </div>
-              @endforeach
-            </div>
-          </div>
-          <div class="d-flex flex-column flex-sm-row justify-content-between gap-2">
-            <label class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" name="quanly_is_active" value="1" @checked($quanlyActive)>
-              <span class="form-check-label">Bật liên kết Quanly cho user này</span>
-            </label>
-            <button class="btn btn-primary" type="submit">
-              <i class="bx bx-save me-1"></i>Lưu cấu hình Quanly
-            </button>
-          </div>
-        </form>
-      </div>
-
-      <div class="col-xl-6">
-        <div class="row g-3">
-          <div class="col-md-6">
-            <div class="border rounded p-3 h-100">
-              <div class="text-muted small mb-1">Tài khoản Quanly đã link</div>
-              @if($quanlyLink)
-                <div class="fw-semibold">Quanly user #{{ (int) $quanlyLink->quanly_user_id }}</div>
-                <div class="small text-muted">Tenant #{{ (int) ($quanlyLink->quanly_tenant_id ?? 0) }}</div>
-                <div class="small text-muted">Liên kết lúc {{ $formatTime($quanlyLink->linked_at ?? $quanlyLink->created_at ?? null) }}</div>
-              @else
-                <div class="text-muted">Hãy bấm “Kết nối APIBank” từ Quanly để tạo link user.</div>
-              @endif
-            </div>
-          </div>
-          <div class="col-md-6">
-            <div class="border rounded p-3 h-100">
-              <div class="text-muted small">Delivery user này</div>
-              <div class="fw-semibold">{{ number_format((int) ($quanly['deliveries_delivered'] ?? 0)) }}/{{ number_format((int) ($quanly['deliveries_total'] ?? 0)) }} thành công</div>
-              <div class="small text-muted">Pending {{ number_format((int) ($quanly['deliveries_pending'] ?? 0)) }} · Lỗi {{ number_format((int) ($quanly['deliveries_failed'] ?? 0)) }}</div>
-            </div>
-          </div>
-          <div class="col-12">
-            <div class="bg-label-secondary rounded p-3 h-100">
-              <div class="text-muted small mb-1">Webhook Quanly gần nhất</div>
-              @if($quanlyLast)
-                <div class="d-flex flex-wrap gap-2 align-items-center">
-                  <span class="badge bg-label-info font-monospace">{{ $quanlyLast->event }}</span>
-                  <span class="small text-muted">HTTP {{ $quanlyLast->response_status ?: '—' }}</span>
-                  <span class="small text-muted">{{ $formatTime($quanlyLast->delivered_at ?: $quanlyLast->failed_at ?: $quanlyLast->created_at) }}</span>
-                </div>
-                @if($quanlyLast->last_error)
-                  <div class="small text-danger mt-1">{{ $quanlyLast->last_error }}</div>
-                @endif
-              @else
-                <div class="text-muted">Chưa có webhook Quanly nào cho user này.</div>
-              @endif
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </div>

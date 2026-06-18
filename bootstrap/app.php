@@ -12,6 +12,7 @@ return Application::configure(basePath: dirname(__DIR__))
   )
   ->withCommands([
     \App\Console\Commands\BankScanCommand::class,
+    \App\Console\Commands\RechargeScanCommand::class,
     \App\Console\Commands\WebhookDeliverCommand::class,
   ])
   ->withMiddleware(function (Middleware $middleware) {

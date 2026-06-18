@@ -28,7 +28,7 @@
       <div class="card-body">
         <div class="mb-4">
           <h6 class="mb-1">Chưa cộng tiền sau khi chuyển khoản</h6>
-          <div class="text-muted">Kiểm tra đúng nội dung nạp, sau đó bấm “Tôi đã chuyển khoản” tại trang nạp tiền.</div>
+          <div class="text-muted">Kiểm tra đúng nội dung nạp và giữ trang nạp tiền mở, hệ thống sẽ tự đối soát bằng realtime AJAX.</div>
         </div>
         <div class="mb-4">
           <h6 class="mb-1">Token ngân hàng không dùng được</h6>

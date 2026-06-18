@@ -428,7 +428,7 @@ $buildingsForDropdown = $buildingsForDropdown ?? null;
           <div class="flex-grow-1">
             <!-- Nếu bạn dùng Laravel Auth: -->
               <h6 class="mb-0">{{ Auth::user()->display_name ??  Auth::user()->name }}</h6>
-              <small class="text-muted">Mã thành viên: 100{{ Auth::user()->id ?? 0 }}</small>
+              <small class="text-muted">Mã thành viên: {{ Auth::user()->id ?? 0 }}</small>
 
           </div>
         </div>

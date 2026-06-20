@@ -26,27 +26,27 @@ class BankAccountsController extends Controller
             return redirect()->route('login')->with('error', 'Vui lòng đăng nhập');
         }
 
-        $vcb = AccountVietcombank::where('user_id', $user->id)
+        $vcb = $this->visibleBankAccountQuery(AccountVietcombank::where('user_id', $user->id))
             ->orderByDesc('id')
             ->get()
             ->map(fn ($row) => $this->vcbItem($row));
 
-        $acb = AccountAcb::where('user_id', $user->id)
+        $acb = $this->visibleBankAccountQuery(AccountAcb::where('user_id', $user->id))
             ->orderByDesc('id')
             ->get()
             ->map(fn ($row) => $this->acbItem($row));
 
-        $vpbank = AccountVpbank::where('user_id', $user->id)
+        $vpbank = $this->visibleBankAccountQuery(AccountVpbank::where('user_id', $user->id))
             ->orderByDesc('id')
             ->get()
             ->map(fn ($row) => $this->vpbankItem($row));
 
-        $techcombank = AccountTechcombank::where('user_id', $user->id)
+        $techcombank = $this->visibleBankAccountQuery(AccountTechcombank::where('user_id', $user->id))
             ->orderByDesc('id')
             ->get()
             ->map(fn ($row) => $this->techcombankItem($row));
 
-        $mbbank = AccountMbbank::where('user_id', $user->id)
+        $mbbank = $this->visibleBankAccountQuery(AccountMbbank::where('user_id', $user->id))
             ->orderByDesc('id')
             ->get()
             ->map(fn ($row) => $this->mbbankItem($row));
@@ -100,26 +100,26 @@ class BankAccountsController extends Controller
         });
 
         $stats = [
-            'total' => DB::table('account_acb')->count()
-                + DB::table('account_vietcombank')->count()
-                + DB::table('account_vpbank')->count()
-                + DB::table('account_techcombank')->count()
-                + DB::table('account_mbbank')->count(),
-            'acb' => DB::table('account_acb')->count(),
-            'vcb' => DB::table('account_vietcombank')->count(),
-            'vpbank' => DB::table('account_vpbank')->count(),
-            'techcombank' => DB::table('account_techcombank')->count(),
-            'mbbank' => DB::table('account_mbbank')->count(),
-            'system' => DB::table('account_acb')->whereNull('user_id')->count()
-                + DB::table('account_vietcombank')->whereNull('user_id')->count()
-                + DB::table('account_vpbank')->whereNull('user_id')->count()
-                + DB::table('account_techcombank')->whereNull('user_id')->count()
-                + DB::table('account_mbbank')->whereNull('user_id')->count(),
-            'has_token' => DB::table('account_acb')->whereNotNull('token')->where('token', '<>', '')->count()
-                + DB::table('account_vietcombank')->whereNotNull('token')->where('token', '<>', '')->count()
-                + DB::table('account_vpbank')->whereNotNull('token')->where('token', '<>', '')->count()
-                + DB::table('account_techcombank')->whereNotNull('token')->where('token', '<>', '')->count()
-                + DB::table('account_mbbank')->whereNotNull('token')->where('token', '<>', '')->count(),
+            'total' => $this->visibleDbTable('account_acb')->count()
+                + $this->visibleDbTable('account_vietcombank')->count()
+                + $this->visibleDbTable('account_vpbank')->count()
+                + $this->visibleDbTable('account_techcombank')->count()
+                + $this->visibleDbTable('account_mbbank')->count(),
+            'acb' => $this->visibleDbTable('account_acb')->count(),
+            'vcb' => $this->visibleDbTable('account_vietcombank')->count(),
+            'vpbank' => $this->visibleDbTable('account_vpbank')->count(),
+            'techcombank' => $this->visibleDbTable('account_techcombank')->count(),
+            'mbbank' => $this->visibleDbTable('account_mbbank')->count(),
+            'system' => $this->visibleDbTable('account_acb')->whereNull('user_id')->count()
+                + $this->visibleDbTable('account_vietcombank')->whereNull('user_id')->count()
+                + $this->visibleDbTable('account_vpbank')->whereNull('user_id')->count()
+                + $this->visibleDbTable('account_techcombank')->whereNull('user_id')->count()
+                + $this->visibleDbTable('account_mbbank')->whereNull('user_id')->count(),
+            'has_token' => $this->visibleDbTable('account_acb')->whereNotNull('token')->where('token', '<>', '')->count()
+                + $this->visibleDbTable('account_vietcombank')->whereNotNull('token')->where('token', '<>', '')->count()
+                + $this->visibleDbTable('account_vpbank')->whereNotNull('token')->where('token', '<>', '')->count()
+                + $this->visibleDbTable('account_techcombank')->whereNotNull('token')->where('token', '<>', '')->count()
+                + $this->visibleDbTable('account_mbbank')->whereNotNull('token')->where('token', '<>', '')->count(),
         ];
 
         return view('admin.bank-accounts', compact(
@@ -358,18 +358,37 @@ class BankAccountsController extends Controller
         ], 422);
     }
 
-    public function token(Request $request, PaymentController $payment, string $bank, int $id)
+    public function token(Request $request, string $bank, int $id)
     {
-        $request->merge(['id' => $id]);
-        $payload = $this->payloadFrom(match ($bank) {
-            'acb' => $payment->acbSendToken($request),
-            'vpbank' => $payment->vpbankSendToken($request),
-            'techcombank' => $payment->techcombankSendToken($request),
-            'mbbank' => $payment->mbbankSendToken($request),
-            default => $payment->vcbSendToken($request),
-        });
+        if (!in_array($bank, ['acb', 'vcb', 'vpbank', 'techcombank', 'mbbank'], true)) {
+            return response()->json(['status' => '1', 'ok' => false, 'msg' => 'Ngân hàng không hợp lệ.'], 422);
+        }
 
-        return response()->json($payload, (string) ($payload['status'] ?? '') === '2' ? 200 : 422);
+        $model = $this->ownedBankAccount($bank, $id);
+        if (!$model) {
+            return response()->json(['status' => '1', 'ok' => false, 'msg' => 'Không tìm thấy tài khoản'], 404);
+        }
+
+        $token = trim((string) ($model->token ?? ''));
+        if ($token === '') {
+            return response()->json(['status' => '1', 'ok' => false, 'msg' => 'Tài khoản này chưa có token.'], 422);
+        }
+
+        $balanceUrl = route("v2.{$bank}.balance", $token);
+        $historyUrl = route("v2.{$bank}.transhistory", $token);
+
+        return response()->json([
+            'status' => '2',
+            'ok' => true,
+            'token' => $token,
+            'balance_url' => $balanceUrl,
+            'history_url' => $historyUrl,
+            'msg' => implode("\n", [
+                'Token ' . strtoupper($bank) . ': ' . $token,
+                'API số dư: ' . $balanceUrl,
+                'API giao dịch: ' . $historyUrl,
+            ]),
+        ]);
     }
 
     public function destroy(Request $request, string $bank, int $id)
@@ -379,25 +398,24 @@ class BankAccountsController extends Controller
             return response()->json(['status' => '1', 'ok' => false, 'msg' => 'Không tìm thấy tài khoản'], 404);
         }
 
-        $accountNo = $this->bankAccountNo($bank, $model);
-        if ($this->bankTransactionCount($bank, $id, $accountNo) > 0) {
-            if (!$this->setBankAccountActive($model, false, 'Người dùng xóa tài khoản đã có lịch sử; hệ thống chuyển sang tạm dừng để giữ audit.')) {
-                return response()->json([
-                    'status' => '1',
-                    'ok' => false,
-                    'msg' => 'Tài khoản đã có lịch sử giao dịch nên không thể xóa cứng. Vui lòng chạy migration lifecycle để dùng trạng thái tạm dừng.',
-                ], 422);
-            }
-
+        if ($this->archiveBankAccount($model, 'Người dùng xóa tài khoản; hệ thống ẩn account và giữ nguyên lịch sử giao dịch.')) {
             return response()->json([
                 'status' => '2',
                 'ok' => true,
-                'msg' => 'Tài khoản đã có lịch sử giao dịch nên hệ thống đã chuyển sang tạm dừng, không xóa lịch sử bank.',
+                'msg' => 'Đã xóa tài khoản khỏi danh sách. Lịch sử giao dịch vẫn được lưu ẩn và sẽ tự nối lại khi kết nối lại đúng số tài khoản.',
             ]);
         }
 
-        $model->delete();
+        $accountNo = $this->bankAccountNo($bank, $model);
+        if ($this->bankTransactionCount($bank, $id, $accountNo) > 0) {
+            return response()->json([
+                'status' => '1',
+                'ok' => false,
+                'msg' => 'Tài khoản đã có lịch sử giao dịch nên không thể xóa cứng. Vui lòng chạy migration archive account trước.',
+            ], 422);
+        }
 
+        $model->delete();
         $payload = ['status' => '2', 'ok' => true, 'msg' => 'Đã xóa tài khoản chưa phát sinh lịch sử giao dịch.'];
 
         return response()->json($payload, (string) ($payload['status'] ?? '') === '2' ? 200 : 422);
@@ -449,6 +467,28 @@ class BankAccountsController extends Controller
         return $query->where('id', $id)->where('user_id', $userId)->first();
     }
 
+    private function visibleBankAccountQuery($query)
+    {
+        return $this->applyNotArchived($query, $query->getModel()->getTable());
+    }
+
+    private function visibleDbTable(string $table)
+    {
+        return $this->applyNotArchived(DB::table($table), $table);
+    }
+
+    private function applyNotArchived($query, string $table)
+    {
+        if (Schema::hasColumn($table, 'is_deleted')) {
+            $query->where(function ($subQuery) use ($table) {
+                $subQuery->whereNull($table . '.is_deleted')
+                    ->orWhere($table . '.is_deleted', 0);
+            });
+        }
+
+        return $query;
+    }
+
     private function reactivateCurrentAccount(string $bank, string $username, string $accountNo, bool $systemReceiver = false): void
     {
         $userId = Auth::id();
@@ -459,11 +499,11 @@ class BankAccountsController extends Controller
         $username = trim($username);
         $accountNo = trim($accountNo);
         $query = match ($bank) {
-            'acb' => AccountAcb::query()->where('phone', $username),
-            'vpbank' => AccountVpbank::query()->where('username', $username),
+            'acb' => AccountAcb::query()->where('stk', $accountNo),
+            'vpbank' => AccountVpbank::query()->where('account', $accountNo),
             'techcombank' => AccountTechcombank::query()->where('account', $accountNo),
             'mbbank' => AccountMbbank::query()->where('account', $accountNo),
-            default => AccountVietcombank::query()->where('username', $username),
+            default => AccountVietcombank::query()->where('account', $accountNo),
         };
 
         $query = $systemReceiver ? $query->whereNull('user_id') : $query->where('user_id', $userId);
@@ -498,6 +538,50 @@ class BankAccountsController extends Controller
         }
         if ($active && Schema::hasColumn($table, 'next_scan_at')) {
             $updates['next_scan_at'] = now()->toDateTimeString();
+        }
+        if ($active && Schema::hasColumn($table, 'is_deleted')) {
+            $updates['is_deleted'] = 0;
+        }
+        if ($active && Schema::hasColumn($table, 'deleted_at')) {
+            $updates['deleted_at'] = null;
+        }
+
+        DB::table($table)->where('id', (int) $model->id)->update($updates);
+
+        return true;
+    }
+
+    private function archiveBankAccount(Model $model, ?string $note): bool
+    {
+        $table = $model->getTable();
+        if (!Schema::hasColumn($table, 'is_deleted')) {
+            return false;
+        }
+
+        $updates = ['is_deleted' => 1];
+        if (Schema::hasColumn($table, 'deleted_at')) {
+            $updates['deleted_at'] = now()->toDateTimeString();
+        }
+        if (Schema::hasColumn($table, 'is_active')) {
+            $updates['is_active'] = 0;
+        }
+        if (Schema::hasColumn($table, 'stopped_at')) {
+            $updates['stopped_at'] = now()->toDateTimeString();
+        }
+        if (Schema::hasColumn($table, 'status_note')) {
+            $updates['status_note'] = $note;
+        }
+        if (Schema::hasColumn($table, 'next_scan_at')) {
+            $updates['next_scan_at'] = null;
+        }
+        if (Schema::hasColumn($table, 'last_scan_status')) {
+            $updates['last_scan_status'] = 'deleted';
+        }
+        if (Schema::hasColumn($table, 'last_scan_error')) {
+            $updates['last_scan_error'] = null;
+        }
+        if (Schema::hasColumn($table, 'scan_failed_count')) {
+            $updates['scan_failed_count'] = 0;
         }
 
         DB::table($table)->where('id', (int) $model->id)->update($updates);
@@ -768,6 +852,12 @@ class BankAccountsController extends Controller
                 users.email as owner_email,
                 users.role as owner_role
             ");
+
+        $this->applyNotArchived($vcb, 'account_vietcombank');
+        $this->applyNotArchived($acb, 'account_acb');
+        $this->applyNotArchived($vpbank, 'account_vpbank');
+        $this->applyNotArchived($techcombank, 'account_techcombank');
+        $this->applyNotArchived($mbbank, 'account_mbbank');
 
         $this->applyAdminAccountSearch($vcb, $keyword, 'account_vietcombank', ['username', 'account', 'name']);
         $this->applyAdminAccountSearch($acb, $keyword, 'account_acb', ['phone', 'stk', 'name']);

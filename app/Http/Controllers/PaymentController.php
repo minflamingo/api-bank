@@ -464,7 +464,18 @@ class PaymentController extends Controller
         if ($useDecryption) {
             $decode = json_decode($body, true);
             if (isset($decode['k']) && isset($decode['d'])) {
-                return $this->decryptResponse($decode['k'], $decode['d']);
+                try {
+                    return $this->decryptResponse($decode['k'], $decode['d']);
+                } catch (\Throwable $e) {
+                    \Log::warning('VCB decrypt response failed', [
+                        'message' => $e->getMessage(),
+                    ]);
+
+                    return json_encode([
+                        'code' => '99',
+                        'des' => 'Không giải mã được phản hồi VCB. Vui lòng kiểm tra cấu hình RSA VCB.',
+                    ], JSON_UNESCAPED_UNICODE);
+                }
             } else {
                 return $body;
             }
@@ -1358,6 +1369,10 @@ class PaymentController extends Controller
     }
     private function decodeRSA($base64Cipher, $privateKeyPem)
     {
+        if (trim((string) $privateKeyPem) === '') {
+            throw new \RuntimeException('VCB client private key is empty.');
+        }
+
         $cipher = base64_decode($base64Cipher);
         $rsa = PublicKeyLoader::load($privateKeyPem)->withPadding(RSA::ENCRYPTION_PKCS1);
         return $rsa->decrypt($cipher);

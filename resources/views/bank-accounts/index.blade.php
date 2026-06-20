@@ -337,7 +337,7 @@
                     <i class="bx bx-list-ul"></i> Lịch sử
                   </a>
                   <button class="btn btn-sm btn-outline-primary btn-touch" type="button" data-token-url="{{ $account->token_url }}">
-                    <i class="bx bx-code-alt"></i> API
+                    <i class="bx bx-copy"></i> Copy token
                   </button>
                   <button class="btn btn-sm btn-outline-{{ $account->is_active ? 'warning' : 'success' }} btn-touch"
                           type="button"
@@ -420,7 +420,7 @@
               <i class="bx bx-list-ul"></i> Lịch sử giao dịch
             </a>
             <button class="btn btn-outline-primary btn-touch" type="button" data-token-url="{{ $account->token_url }}">
-              <i class="bx bx-code-alt"></i> Lấy API
+              <i class="bx bx-copy"></i> Copy token
             </button>
             <button class="btn btn-outline-{{ $account->is_active ? 'warning' : 'success' }} btn-touch"
                     type="button"
@@ -515,6 +515,26 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  function copyText(text) {
+    if (!text) return Promise.reject(new Error('empty'));
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+
+    const temp = document.createElement('textarea');
+    temp.value = text;
+    temp.setAttribute('readonly', '');
+    temp.style.position = 'fixed';
+    temp.style.left = '-9999px';
+    temp.style.opacity = '0';
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand('copy');
+    document.body.removeChild(temp);
+
+    return Promise.resolve();
+  }
+
   page.addEventListener('click', function (event) {
     const refreshBtn = event.target.closest('[data-refresh-balances]');
     if (refreshBtn) {
@@ -532,19 +552,30 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(data => {
           apiOutput.value = data.msg || 'Không có dữ liệu API.';
           apiPanel.classList.add('is-open');
-          apiPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return copyText(data.token || '').then(() => {
+            tokenBtn.innerHTML = '<i class="bx bx-check"></i> Đã copy';
+            window.setTimeout(() => {
+              tokenBtn.disabled = false;
+              tokenBtn.innerHTML = oldHtml;
+            }, 900);
+          }).catch(() => {
+            apiPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            tokenBtn.disabled = false;
+            tokenBtn.innerHTML = oldHtml;
+            alert('Không copy được token tự động. Token đã hiện trong khung API.');
+          });
         })
-        .catch(data => alert(data.msg || data.message || 'Không lấy được API.'))
-        .finally(() => {
+        .catch(data => {
           tokenBtn.disabled = false;
           tokenBtn.innerHTML = oldHtml;
+          alert(data.msg || data.message || 'Không lấy được token.');
         });
       return;
     }
 
     const deleteBtn = event.target.closest('[data-delete-url]');
     if (deleteBtn) {
-      if (!confirm('Xóa tài khoản này? Nếu tài khoản đã có lịch sử giao dịch, hệ thống sẽ chỉ tạm dừng để giữ dữ liệu bank.')) return;
+      if (!confirm('Xóa tài khoản này khỏi danh sách? Lịch sử giao dịch vẫn được lưu ẩn và sẽ tự nối lại nếu bạn kết nối lại đúng số tài khoản.')) return;
       deleteBtn.disabled = true;
 
       postJson(deleteBtn.dataset.deleteUrl, { method: 'DELETE' })

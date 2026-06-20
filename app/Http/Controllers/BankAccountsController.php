@@ -487,6 +487,15 @@ class BankAccountsController extends Controller
         if (Schema::hasColumn($table, 'status_note')) {
             $updates['status_note'] = $active ? null : $note;
         }
+        if ($active && Schema::hasColumn($table, 'scan_failure_count')) {
+            $updates['scan_failure_count'] = 0;
+        }
+        if ($active && Schema::hasColumn($table, 'last_scan_status')) {
+            $updates['last_scan_status'] = null;
+        }
+        if ($active && Schema::hasColumn($table, 'last_scan_error')) {
+            $updates['last_scan_error'] = null;
+        }
         if ($active && Schema::hasColumn($table, 'next_scan_at')) {
             $updates['next_scan_at'] = now()->toDateTimeString();
         }
@@ -552,6 +561,9 @@ class BankAccountsController extends Controller
             'is_active' => $active,
             'status_text' => $active ? 'Đang chạy' : 'Tạm dừng',
             'status_badge_class' => $active ? 'success' : 'secondary',
+            'status_note' => (string) ($row->status_note ?? ''),
+            'last_scan_error' => (string) ($row->last_scan_error ?? ''),
+            'scan_failure_count' => (int) ($row->scan_failure_count ?? 0),
             'status_url' => route('bank.accounts.status', ['bank' => $bank, 'id' => $row->id]),
         ];
     }

@@ -2323,6 +2323,11 @@ class PaymentController extends Controller
 
     private function vpbankReLoginIfNeed(AccountVpbank $acc): bool
     {
+        return !empty($this->vpbankReLoginAttempt($acc)['success']);
+    }
+
+    private function vpbankReLoginAttempt(AccountVpbank $acc): array
+    {
         try {
             $login = $this->vpbankLoginRequest((string) $acc->username, (string) $acc->password);
             if (!empty($login['success']) && empty($login['needs_otp'])) {
@@ -2332,10 +2337,70 @@ class PaymentController extends Controller
                 $acc->is_login = true;
                 $acc->create_date = now();
                 $acc->save();
+
+                return ['success' => true, 'message' => 'Đăng nhập lại VPBank thành công'];
+            }
+
+            if (!empty($login['success']) && !empty($login['needs_otp'])) {
+                $acc->token_key = (string) ($login['token_key'] ?? $acc->token_key);
+                $acc->csrf = (string) ($login['csrf'] ?? $acc->csrf);
+                $acc->cookie = (string) ($login['cookie'] ?? $acc->cookie);
+                $acc->is_login = false;
+                $acc->create_date = now();
+                $acc->save();
+
+                return [
+                    'success' => false,
+                    'requires_reauth' => true,
+                    'message' => 'VPBank yêu cầu OTP/thiết bị tin cậy, vui lòng cập nhật lại kết nối.',
+                ];
+            }
+
+            $message = (string) ($login['message'] ?? 'Không thể đăng nhập lại VPBank');
+
+            return [
+                'success' => false,
+                'credential_error' => $this->vpbankLooksLikeCredentialError($message),
+                'message' => $message,
+            ];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    private function vpbankLooksLikeSessionExpired(int $code, string $message): bool
+    {
+        $message = mb_strtolower($message);
+        if (in_array($code, [401, 403], true)) {
+            return true;
+        }
+
+        foreach (['phiên', 'session', 'token', 'uaf', 'unauthorized'] as $needle) {
+            if (str_contains($message, $needle)) {
                 return true;
             }
-        } catch (\Throwable $e) {
-            return false;
+        }
+
+        return false;
+    }
+
+    private function vpbankLooksLikeCredentialError(string $message): bool
+    {
+        $message = mb_strtolower($message);
+        foreach ([
+            'sai mật khẩu',
+            'mat khau',
+            'mật khẩu không đúng',
+            'tài khoản hoặc mật khẩu',
+            'tai khoan hoac mat khau',
+            'incorrect password',
+            'wrong password',
+            'invalid password',
+            'invalid credential',
+        ] as $needle) {
+            if (str_contains($message, $needle)) {
+                return true;
+            }
         }
 
         return false;
@@ -4730,11 +4795,34 @@ class PaymentController extends Controller
         }
 
         $history = $this->getTransactionHistoryVpbank($acc, null, null);
-        if ((int) ($history['code'] ?? 0) !== 200 && $this->vpbankReLoginIfNeed($acc)) {
-            $history = $this->getTransactionHistoryVpbank($acc->refresh(), null, null);
+        if ((int) ($history['code'] ?? 0) !== 200) {
+            $reLogin = $this->vpbankReLoginAttempt($acc);
+            if (!empty($reLogin['success'])) {
+                $history = $this->getTransactionHistoryVpbank($acc->refresh(), null, null);
+            } elseif (!empty($reLogin['requires_reauth'])) {
+                return [
+                    'ok' => false,
+                    'session_expired' => true,
+                    'requires_reauth' => true,
+                    'message' => (string) ($reLogin['message'] ?? 'VPBank cần xác thực lại trên app/OTP'),
+                ];
+            } elseif (!empty($reLogin['credential_error'])) {
+                return [
+                    'ok' => false,
+                    'credential_error' => true,
+                    'message' => (string) ($reLogin['message'] ?? 'Tài khoản hoặc mật khẩu VPBank không đúng'),
+                ];
+            }
         }
         if ((int) ($history['code'] ?? 0) !== 200) {
-            return ['ok' => false, 'session_expired' => true, 'message' => (string) ($history['message'] ?? 'Phiên VPBank hết hạn')];
+            $message = (string) ($history['message'] ?? 'Không quét được VPBank');
+            $sessionExpired = $this->vpbankLooksLikeSessionExpired((int) ($history['code'] ?? 0), $message);
+
+            return [
+                'ok' => false,
+                'session_expired' => $sessionExpired,
+                'message' => $message,
+            ];
         }
 
         $balance = $this->getBalanceVpbank($acc->refresh());

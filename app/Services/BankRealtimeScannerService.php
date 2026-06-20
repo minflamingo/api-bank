@@ -49,20 +49,34 @@ class BankRealtimeScannerService
         $userId = (int) ($account['user_id'] ?? 0);
         $user = $userId > 0 ? User::find($userId) : null;
 
-        if (!$user || (int) ((ApiPackage::applyDueScheduledPlan($user) ?: $user)->time_end ?? 0) <= time()) {
-            $this->markAccount($model, false, 'API package expired', 600);
+        if (!$user) {
+            $this->markAccount($model, false, 'Không tìm thấy user sở hữu tài khoản APIBank.', 600);
+            return ['scanned' => 0, 'created' => 0, 'updated' => 0, 'failed' => 0, 'events' => 0];
+        }
+
+        if ((int) ((ApiPackage::applyDueScheduledPlan($user) ?: $user)->time_end ?? 0) <= time()) {
+            $this->markAccountFailed($model, 'Gói API đã hết hạn, vui lòng gia hạn để scanner chạy lại.', 600, true);
             return ['scanned' => 0, 'created' => 0, 'updated' => 0, 'failed' => 0, 'events' => 0];
         }
 
         $snapshot = app(PaymentController::class)->internalBankSnapshotForScanner($bank, (int) $model->id, $limit);
         if (empty($snapshot['ok'])) {
             $message = (string) ($snapshot['message'] ?? 'Không quét được ' . strtoupper($bank));
-            $this->markAccount($model, false, $message, !empty($snapshot['session_expired']) ? 300 : 90);
+            $pauseImmediately = !empty($snapshot['credential_error'])
+                || !empty($snapshot['requires_reauth'])
+                || $this->looksLikeCredentialError($message);
+            $paused = $this->markAccountFailed(
+                $model,
+                $message,
+                !empty($snapshot['session_expired']) ? 300 : 90,
+                $pauseImmediately
+            );
             $events = 0;
             if (!empty($snapshot['session_expired'])) {
                 $events += $this->events->dispatch($userId, 'account.session_expired', [
                     'account' => $this->accountPayload($account),
                     'message' => $message,
+                    'paused' => $paused,
                 ]);
             }
 
@@ -144,6 +158,8 @@ class BankRealtimeScannerService
 
         if ($ok) {
             $this->setIfColumn($updates, $table, 'last_synced_at', now()->toDateTimeString());
+            $this->setIfColumn($updates, $table, 'scan_failure_count', 0);
+            $this->setIfColumn($updates, $table, 'status_note', null);
         }
         if ($balance !== null) {
             $this->setIfColumn($updates, $table, 'last_balance', $balance);
@@ -156,6 +172,73 @@ class BankRealtimeScannerService
         if ($updates) {
             DB::table($table)->where('id', (int) $model->id)->update($updates);
         }
+    }
+
+    private function markAccountFailed(Model $model, string $message, int $delaySeconds, bool $pauseImmediately = false): bool
+    {
+        $table = $model->getTable();
+        $failureCount = $this->nextFailureCount($model);
+        $paused = $pauseImmediately || $failureCount >= 3;
+        $updates = [];
+
+        $this->setIfColumn($updates, $table, 'last_scan_status', 'error');
+        $this->setIfColumn($updates, $table, 'last_scan_error', $message);
+        $this->setIfColumn($updates, $table, 'scan_failure_count', $failureCount);
+
+        if ($paused) {
+            $note = $pauseImmediately
+                ? $message
+                : 'Scanner tự dừng sau 3 lỗi liên tiếp: ' . $message;
+            $this->setIfColumn($updates, $table, 'is_active', 0);
+            $this->setIfColumn($updates, $table, 'stopped_at', now()->toDateTimeString());
+            $this->setIfColumn($updates, $table, 'status_note', mb_substr($note, 0, 255));
+            $this->setIfColumn($updates, $table, 'next_scan_at', null);
+        } else {
+            $this->setIfColumn($updates, $table, 'next_scan_at', now()->addSeconds(max(15, $delaySeconds))->toDateTimeString());
+        }
+
+        if ($updates) {
+            DB::table($table)->where('id', (int) $model->id)->update($updates);
+        }
+
+        return $paused;
+    }
+
+    private function nextFailureCount(Model $model): int
+    {
+        $table = $model->getTable();
+        if (!Schema::hasColumn($table, 'scan_failure_count')) {
+            return 1;
+        }
+
+        $current = DB::table($table)->where('id', (int) $model->id)->value('scan_failure_count');
+
+        return min(255, ((int) ($current ?? $model->scan_failure_count ?? 0)) + 1);
+    }
+
+    private function looksLikeCredentialError(string $message): bool
+    {
+        $message = mb_strtolower($message);
+        foreach ([
+            'sai mật khẩu',
+            'mat khau',
+            'mật khẩu không đúng',
+            'tài khoản hoặc mật khẩu',
+            'tai khoan hoac mat khau',
+            'incorrect password',
+            'wrong password',
+            'invalid password',
+            'invalid credential',
+            'invalid username',
+            'access denied',
+            'unauthorized',
+        ] as $needle) {
+            if (str_contains($message, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function accountPayload(array $account): array

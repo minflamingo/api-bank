@@ -318,6 +318,14 @@
               <td><span class="token-mask">{{ $maskToken($account->token) }}</span></td>
               <td>
                 <span class="badge bg-label-{{ $account->status_badge_class }}">{{ $account->status_text }}</span>
+                @php
+                  $statusReason = trim($account->status_note ?: $account->last_scan_error);
+                @endphp
+                @if(!$account->is_active && $statusReason !== '')
+                  <div class="small text-danger mt-1" style="max-width: 220px;">{{ $statusReason }}</div>
+                @elseif($account->is_active && $account->scan_failure_count > 0 && $account->last_scan_error !== '')
+                  <div class="small text-warning mt-1" style="max-width: 220px;">Lỗi gần nhất: {{ $account->last_scan_error }}</div>
+                @endif
               </td>
               <td>{{ $account->created_text }}</td>
               <td class="text-end">
@@ -390,6 +398,14 @@
             <div class="mobile-meta-item">
               <div class="small text-muted">Trạng thái</div>
               <div><span class="badge bg-label-{{ $account->status_badge_class }}">{{ $account->status_text }}</span></div>
+              @php
+                $statusReason = trim($account->status_note ?: $account->last_scan_error);
+              @endphp
+              @if(!$account->is_active && $statusReason !== '')
+                <div class="small text-danger mt-1">{{ $statusReason }}</div>
+              @elseif($account->is_active && $account->scan_failure_count > 0 && $account->last_scan_error !== '')
+                <div class="small text-warning mt-1">Lỗi gần nhất: {{ $account->last_scan_error }}</div>
+              @endif
             </div>
             <div class="mobile-meta-item">
               <div class="small text-muted">Ngân hàng</div>

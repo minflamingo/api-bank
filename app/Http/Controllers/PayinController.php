@@ -994,6 +994,7 @@ class PayinController extends Controller
                         'api_next_plan_price' => 0,
                         'api_next_plan_scheduled_at' => 0,
                     ]);
+                    ApiPackage::reactivateBankAccountsAfterRenewal((int) $user->id);
 
                     WalletLedger::record(
                         (int) $user->id,
@@ -1060,6 +1061,7 @@ class PayinController extends Controller
                     'api_next_plan_price' => 0,
                     'api_next_plan_scheduled_at' => 0,
                 ]);
+                ApiPackage::reactivateBankAccountsAfterRenewal((int) $user->id);
 
                 if ((int) $refund['amount'] > 0) {
                     WalletLedger::record(

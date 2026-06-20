@@ -105,6 +105,7 @@
       ['label' => 'User đã đăng ký', 'value' => number_format($stats['users_total']), 'hint' => number_format($stats['users_today']) . ' user mới hôm nay', 'icon' => 'bx-user', 'class' => 'bg-label-primary text-primary', 'href' => route('admin.users')],
       ['label' => 'Đang đăng nhập', 'value' => number_format($stats['online_sessions']), 'hint' => 'Trong ' . $sessionLifetime . ' phút gần nhất', 'icon' => 'bx-log-in-circle', 'class' => 'bg-label-success text-success', 'href' => route('admin.sessions')],
       ['label' => 'Lịch sử nạp tiền', 'value' => $money($stats['recharge_today']), 'hint' => number_format($stats['invoices_today']) . ' giao dịch hôm nay', 'icon' => 'bx-wallet', 'class' => 'bg-label-warning text-warning', 'href' => route('admin.recharges')],
+      ['label' => 'Giám sát ngân hàng', 'value' => 'Bank', 'hint' => 'Account lỗi scan, deactive và worker bank', 'icon' => 'bx-credit-card', 'class' => 'bg-label-info text-info', 'href' => route('admin.bank-monitor')],
       ['label' => 'Ví & ledger', 'value' => $money($stats['wallet_balance']), 'hint' => 'Tặng tiền và audit lệch ví', 'icon' => 'bx-money', 'class' => 'bg-label-primary text-primary', 'href' => route('admin.wallet')],
       ['label' => 'Nhật ký hệ thống', 'value' => 'Logs', 'hint' => 'Theo dõi thao tác vận hành', 'icon' => 'bx-list-ul', 'class' => 'bg-label-secondary text-secondary', 'href' => route('admin.logs')],
   ];

@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class SuperAdminController extends Controller
 {
@@ -427,6 +428,311 @@ class SuperAdminController extends Controller
             'users',
             'walletLedgers'
         ));
+    }
+
+    public function bankMonitor(Request $request)
+    {
+        return view('admin.bank-monitor', [
+            'apibank' => $this->bankMonitorSnapshot(),
+        ]);
+    }
+
+    public function updateBankAccountStatus(Request $request, string $bank, int $id)
+    {
+        $data = $request->validate([
+            'active' => ['required', 'boolean'],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $tables = $this->bankTables();
+        if (!isset($tables[$bank])) {
+            return back()->with('error', 'Ngân hàng không hợp lệ.');
+        }
+
+        $table = $tables[$bank]['table'];
+        if (!Schema::hasTable($table) || !Schema::hasColumn($table, 'is_active')) {
+            return back()->with('error', 'Bảng account chưa hỗ trợ dừng/bật.');
+        }
+
+        $account = DB::table($table)->where('id', $id)->first();
+        if (!$account) {
+            return back()->with('error', 'Không tìm thấy account ngân hàng.');
+        }
+
+        $active = (int) $data['active'] === 1;
+        $columns = Schema::getColumnListing($table);
+        $updates = [
+            'is_active' => $active ? 1 : 0,
+        ];
+
+        if (in_array('stopped_at', $columns, true)) {
+            $updates['stopped_at'] = $active ? null : now();
+        }
+
+        if (in_array('status_note', $columns, true)) {
+            $updates['status_note'] = trim((string) ($data['note'] ?? ''))
+                ?: ($active ? 'Super Admin bật lại từ APIBank Monitor' : 'Super Admin tạm dừng từ APIBank Monitor');
+        }
+
+        if ($active) {
+            if (in_array('scan_failed_count', $columns, true)) {
+                $updates['scan_failed_count'] = 0;
+            }
+            if (in_array('last_scan_status', $columns, true)) {
+                $updates['last_scan_status'] = null;
+            }
+            if (in_array('last_scan_error', $columns, true)) {
+                $updates['last_scan_error'] = null;
+            }
+            if (in_array('next_scan_at', $columns, true)) {
+                $updates['next_scan_at'] = now();
+            }
+        } elseif (in_array('last_scan_status', $columns, true)) {
+            $updates['last_scan_status'] = 'stopped';
+        }
+
+        DB::table($table)->where('id', $id)->update($updates);
+
+        return back()->with('success', ($active ? 'Đã bật lại ' : 'Đã tạm dừng ') . $tables[$bank]['label'] . ' #' . $id . '.');
+    }
+
+    private function bankMonitorSnapshot(): array
+    {
+        $banks = [];
+        $healthyAccounts = [];
+        $problemAccounts = [];
+        $scanner = $this->bankScannerRuntime();
+
+        foreach ($this->bankTables() as $bank => $meta) {
+            $table = $meta['table'];
+            if (!Schema::hasTable($table)) {
+                $banks[$bank] = [
+                    'bank' => $bank,
+                    'label' => $meta['label'],
+                    'table' => $table,
+                    'active' => 0,
+                    'inactive' => 0,
+                    'scan_errors' => 0,
+                    'warning' => 0,
+                    'latest_synced_at' => null,
+                    'next_scan_at' => null,
+                    'min_interval' => null,
+                    'max_interval' => null,
+                    'scan_active' => 0,
+                    'scan_due' => 0,
+                    'scan_running' => false,
+                    'scan_status' => 'missing_table',
+                ];
+                continue;
+            }
+
+            $columns = Schema::getColumnListing($table);
+            $base = DB::table($table)->whereNotNull('token')->where('token', '<>', '');
+            $hasIsActive = in_array('is_active', $columns, true);
+            $hasScanStatus = in_array('last_scan_status', $columns, true);
+            $hasScanFailed = in_array('scan_failed_count', $columns, true);
+            $healthyActive = clone $base;
+            if ($hasIsActive) {
+                $healthyActive->where('is_active', 1);
+            }
+            if ($hasScanStatus) {
+                $healthyActive->where(function ($query) {
+                    $query->whereNull('last_scan_status')
+                        ->orWhere('last_scan_status', '')
+                        ->orWhere('last_scan_status', '<>', 'error');
+                });
+            }
+            if ($hasScanFailed) {
+                $healthyActive->where(function ($query) {
+                    $query->whereNull('scan_failed_count')->orWhere('scan_failed_count', '<=', 0);
+                });
+            }
+            $scanBase = (clone $base)->whereNotNull('user_id');
+            if ($hasIsActive) {
+                $scanBase->where('is_active', 1);
+            }
+            $scanActive = (clone $scanBase)->count();
+            $scanDue = 0;
+            $nextScanAt = null;
+            if (in_array('next_scan_at', $columns, true)) {
+                $scanDue = (clone $scanBase)
+                    ->where(function ($query) {
+                        $query->whereNull('next_scan_at')->orWhere('next_scan_at', '<=', now());
+                    })
+                    ->count();
+                $nextScanAt = (clone $scanBase)->min('next_scan_at');
+            } else {
+                $scanDue = $scanActive;
+            }
+            $scanRunning = !empty($scanner['running']) && $scanActive > 0;
+            $scanStatus = $scanRunning
+                ? 'running'
+                : (!empty($scanner['running']) ? ($scanActive > 0 ? 'waiting' : 'idle') : 'scanner_stopped');
+
+            $banks[$bank] = [
+                'bank' => $bank,
+                'label' => $meta['label'],
+                'table' => $table,
+                'active' => $healthyActive->count(),
+                'inactive' => $hasIsActive ? (clone $base)->where('is_active', 0)->count() : 0,
+                'scan_errors' => $hasScanStatus ? (clone $base)->where('last_scan_status', 'error')->count() : 0,
+                'warning' => $hasScanFailed ? (clone $base)->where('scan_failed_count', '>', 0)->count() : 0,
+                'latest_synced_at' => in_array('last_synced_at', $columns, true) ? (clone $base)->max('last_synced_at') : null,
+                'next_scan_at' => $nextScanAt,
+                'min_interval' => in_array('scan_interval_seconds', $columns, true) ? (clone $base)->min('scan_interval_seconds') : null,
+                'max_interval' => in_array('scan_interval_seconds', $columns, true) ? (clone $base)->max('scan_interval_seconds') : null,
+                'scan_active' => $scanActive,
+                'scan_due' => $scanDue,
+                'scan_running' => $scanRunning,
+                'scan_status' => $scanStatus,
+            ];
+
+            $healthyQuery = (clone $healthyActive)
+                ->select($this->bankMonitorSelects($bank, $meta, $columns));
+            if (in_array('last_synced_at', $columns, true)) {
+                $healthyQuery->orderByDesc('last_synced_at');
+            }
+            $healthyQuery->orderByDesc('id');
+
+            foreach ($healthyQuery->limit(200)->get() as $row) {
+                $healthyAccounts[] = (array) $row;
+            }
+
+            $problemQuery = DB::table($table)
+                ->select($this->bankMonitorSelects($bank, $meta, $columns))
+                ->whereNotNull('token')
+                ->where('token', '<>', '');
+
+            $problemQuery->where(function ($query) use ($hasIsActive, $hasScanStatus, $hasScanFailed) {
+                if ($hasIsActive) {
+                    $query->where('is_active', 0);
+                }
+                if ($hasScanStatus) {
+                    $method = $hasIsActive ? 'orWhere' : 'where';
+                    $query->{$method}('last_scan_status', 'error');
+                }
+                if ($hasScanFailed) {
+                    $query->orWhere('scan_failed_count', '>', 0);
+                }
+            });
+
+            if ($hasScanFailed) {
+                $problemQuery->orderByDesc('scan_failed_count');
+            }
+            if (in_array('last_synced_at', $columns, true)) {
+                $problemQuery->orderByDesc('last_synced_at');
+            }
+            $problemQuery->orderByDesc('id');
+
+            foreach ($problemQuery->limit(200)->get() as $row) {
+                $problemAccounts[] = (array) $row;
+            }
+        }
+
+        return [
+            'ok' => true,
+            'message' => null,
+            'banks' => $banks,
+            'healthy_accounts' => $healthyAccounts,
+            'problem_accounts' => $problemAccounts,
+            'scanner' => $scanner,
+            'source' => 'apibank',
+        ];
+    }
+
+    private function bankScannerRuntime(): array
+    {
+        $heartbeat = [];
+        $heartbeatPath = storage_path('app/runtime/bank-scan-heartbeat.json');
+        if (is_readable($heartbeatPath)) {
+            $decoded = json_decode((string) file_get_contents($heartbeatPath), true);
+            $heartbeat = is_array($decoded) ? $decoded : [];
+        }
+
+        $timestamp = (int) ($heartbeat['timestamp'] ?? 0);
+        $age = $timestamp > 0 ? max(0, time() - $timestamp) : null;
+        $running = $age !== null && $age <= 30;
+
+        return [
+            'name' => 'apibank-bank-scan.service',
+            'running' => $running,
+            'active' => $running ? 'active' : ($age === null ? 'unknown' : 'stale'),
+            'enabled' => 'unknown',
+            'since' => (string) ($heartbeat['time'] ?? ''),
+            'main_pid' => null,
+            'heartbeat_age' => $age,
+            'heartbeat' => $heartbeat,
+        ];
+    }
+
+    private function bankMonitorSelects(string $bank, array $meta, array $columns): array
+    {
+        return [
+            DB::raw("'" . str_replace("'", "''", $bank) . "' as `bank`"),
+            DB::raw("'" . str_replace("'", "''", $meta['label']) . "' as `bank_label`"),
+            $this->selectColumn($columns, 'id', 'id', 0),
+            $this->selectColumn($columns, 'user_id', 'user_id', 0),
+            $this->selectColumn($columns, 'name', 'name'),
+            $this->selectColumn($columns, $meta['account_column'], 'account_no'),
+            $this->selectColumn($columns, $meta['login_column'], 'login_name'),
+            $this->selectColumn($columns, 'is_active', 'is_active', 1),
+            $this->selectColumn($columns, 'stopped_at', 'stopped_at'),
+            $this->selectColumn($columns, 'status_note', 'status_note'),
+            $this->selectColumn($columns, 'scan_failed_count', 'scan_failed_count', 0),
+            $this->selectColumn($columns, 'last_scan_status', 'last_scan_status'),
+            $this->selectColumn($columns, 'last_scan_error', 'last_scan_error'),
+            $this->selectColumn($columns, 'last_synced_at', 'last_synced_at'),
+            $this->selectColumn($columns, 'next_scan_at', 'next_scan_at'),
+        ];
+    }
+
+    private function selectColumn(array $columns, string $column, string $alias, mixed $fallback = ''): mixed
+    {
+        if (in_array($column, $columns, true)) {
+            return DB::raw('`' . str_replace('`', '``', $column) . '` as `' . str_replace('`', '``', $alias) . '`');
+        }
+
+        if (is_numeric($fallback)) {
+            return DB::raw((string) $fallback . ' as `' . str_replace('`', '``', $alias) . '`');
+        }
+
+        return DB::raw("'" . str_replace("'", "''", (string) $fallback) . "' as `" . str_replace('`', '``', $alias) . '`');
+    }
+
+    private function bankTables(): array
+    {
+        return [
+            'acb' => [
+                'label' => 'ACB',
+                'table' => 'account_acb',
+                'account_column' => 'stk',
+                'login_column' => 'phone',
+            ],
+            'vcb' => [
+                'label' => 'Vietcombank',
+                'table' => 'account_vietcombank',
+                'account_column' => 'account',
+                'login_column' => 'username',
+            ],
+            'vpbank' => [
+                'label' => 'VPBank',
+                'table' => 'account_vpbank',
+                'account_column' => 'account',
+                'login_column' => 'username',
+            ],
+            'techcombank' => [
+                'label' => 'Techcombank',
+                'table' => 'account_techcombank',
+                'account_column' => 'account',
+                'login_column' => 'username',
+            ],
+            'mbbank' => [
+                'label' => 'MBBank',
+                'table' => 'account_mbbank',
+                'account_column' => 'account',
+                'login_column' => 'username',
+            ],
+        ];
     }
 
 

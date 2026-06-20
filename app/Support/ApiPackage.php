@@ -4,9 +4,13 @@ namespace App\Support;
 
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class ApiPackage
 {
+    private const PACKAGE_EXPIRED_ERROR = 'API package expired';
+    private const PACKAGE_EXPIRED_NOTE = 'Tự dừng do gói API hết hạn';
+
     public static function plans(): array
     {
         return [
@@ -189,6 +193,7 @@ class ApiPackage
                     'time_end' => $newTimeEnd,
                 ]
             );
+            self::reactivateBankAccountsAfterRenewal((int) $lockedUser->id);
 
             DB::table('xlogs')->insert([
                 'ip' => request()->ip(),
@@ -206,6 +211,79 @@ class ApiPackage
         });
 
         return $freshUser ?: $user;
+    }
+
+    public static function pauseBankAccountsForExpiredPackage(User|int $user): void
+    {
+        $userId = $user instanceof User ? (int) $user->id : (int) $user;
+        if ($userId <= 0) {
+            return;
+        }
+
+        foreach (self::bankAccountTables() as $table) {
+            if (!Schema::hasTable($table) || !Schema::hasColumn($table, 'is_active')) {
+                continue;
+            }
+
+            $columns = Schema::getColumnListing($table);
+            DB::table($table)
+                ->where('user_id', $userId)
+                ->whereNotNull('token')
+                ->where('token', '<>', '')
+                ->where('is_active', 1)
+                ->update(self::bankAccountPayload($columns, [
+                    'is_active' => 0,
+                    'stopped_at' => now()->toDateTimeString(),
+                    'status_note' => self::PACKAGE_EXPIRED_NOTE,
+                    'last_scan_status' => 'package_expired',
+                    'last_scan_error' => self::PACKAGE_EXPIRED_ERROR,
+                    'scan_failed_count' => 0,
+                    'next_scan_at' => null,
+                ]));
+        }
+    }
+
+    public static function reactivateBankAccountsAfterRenewal(User|int $user): void
+    {
+        $userId = $user instanceof User ? (int) $user->id : (int) $user;
+        if ($userId <= 0) {
+            return;
+        }
+
+        foreach (self::bankAccountTables() as $table) {
+            if (!Schema::hasTable($table) || !Schema::hasColumn($table, 'is_active')) {
+                continue;
+            }
+
+            $columns = Schema::getColumnListing($table);
+            $query = DB::table($table)
+                ->where('user_id', $userId)
+                ->whereNotNull('token')
+                ->where('token', '<>', '')
+                ->where('is_active', 0);
+
+            $query->where(function ($query) use ($columns) {
+                if (in_array('status_note', $columns, true)) {
+                    $query->where('status_note', 'like', '%' . self::PACKAGE_EXPIRED_NOTE . '%');
+                }
+                if (in_array('last_scan_error', $columns, true)) {
+                    $query->orWhere('last_scan_error', self::PACKAGE_EXPIRED_ERROR);
+                }
+                if (in_array('last_scan_status', $columns, true)) {
+                    $query->orWhere('last_scan_status', 'package_expired');
+                }
+            });
+
+            $query->update(self::bankAccountPayload($columns, [
+                'is_active' => 1,
+                'stopped_at' => null,
+                'status_note' => null,
+                'last_scan_status' => null,
+                'last_scan_error' => null,
+                'scan_failed_count' => 0,
+                'next_scan_at' => now()->toDateTimeString(),
+            ]));
+        }
     }
 
     public static function durationLabel(int $months): string
@@ -227,5 +305,21 @@ class ApiPackage
             12 => (int) round($monthlyPrice * 12 * 0.9),
             24 => (int) round($monthlyPrice * 24 * 0.8),
         ];
+    }
+
+    private static function bankAccountTables(): array
+    {
+        return [
+            'account_acb',
+            'account_vietcombank',
+            'account_vpbank',
+            'account_techcombank',
+            'account_mbbank',
+        ];
+    }
+
+    private static function bankAccountPayload(array $columns, array $values): array
+    {
+        return array_intersect_key($values, array_flip($columns));
     }
 }

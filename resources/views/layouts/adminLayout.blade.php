@@ -16,6 +16,7 @@ $adminLinks = [
     ['label' => 'Ví & ledger', 'href' => route('admin.wallet'), 'icon' => 'bx-money', 'active' => $currentRouteName === 'admin.wallet'],
     ['label' => 'Nhật ký hệ thống', 'href' => route('admin.logs'), 'icon' => 'bx-list-ul', 'active' => $currentRouteName === 'admin.logs'],
     ['label' => 'Tài khoản ngân hàng', 'href' => route('admin.bank-accounts.index'), 'icon' => 'bx-credit-card', 'active' => $currentRouteName === 'admin.bank-accounts.index'],
+    ['label' => 'Giám sát ngân hàng', 'href' => route('admin.bank-monitor'), 'icon' => 'bx-pulse', 'active' => $currentRouteName === 'admin.bank-monitor'],
     ['label' => 'Cấu hình nạp tiền', 'href' => route('admin.recharge-settings.edit'), 'icon' => 'bx-cog', 'active' => $currentRouteName === 'admin.recharge-settings.edit'],
 ];
 @endphp

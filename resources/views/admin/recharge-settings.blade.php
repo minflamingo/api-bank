@@ -559,7 +559,7 @@
               <div class="col-12">
                 <label class="form-label" for="receiver_account_id">Account nhận nạp</label>
                 <select class="form-select" id="receiver_account_id" name="receiver_account_id" required>
-                  <option value="">Chọn account hệ thống</option>
+                  <option value="">Chọn account nhận nạp</option>
                   @if($acbReceiverAccounts->isNotEmpty())
                     <optgroup label="ACB">
                       @foreach($acbReceiverAccounts as $account)
@@ -1015,7 +1015,7 @@
             @endforeach
             @if($acbReceiverAccounts->isEmpty() && $vcbReceiverAccounts->isEmpty() && $vpbankReceiverAccounts->isEmpty() && $techcombankReceiverAccounts->isEmpty() && $mbbankReceiverAccounts->isEmpty())
               <div class="text-center text-muted py-4">
-                Chưa có token account hệ thống.
+                Chưa có token nhận nạp.
                 <div class="mt-3">
                   <button class="btn btn-primary btn-touch" type="button" data-recharge-tab-jump="add">
                     <i class="bx bx-key"></i> Thêm token nhận nạp
@@ -1037,7 +1037,7 @@
                 <div>
                   <div class="text-muted small mb-1">Super Admin</div>
                   <h5 class="mb-1">Thêm hoặc sửa token nhận nạp</h5>
-                  <div class="text-muted small">Dán token API của account hệ thống đã có trong danh sách bank-accounts.</div>
+                  <div class="text-muted small">Dán token API của account đã có trong danh sách bank-accounts để dùng làm tài khoản nhận nạp.</div>
                 </div>
                 <span class="status-chip status-ok align-self-start">Không nhập mật khẩu bank</span>
               </div>
@@ -1055,7 +1055,7 @@
                         <span class="bank-icon"><i class="bx bx-credit-card"></i></span>
                         <span>
                           <span class="d-block fw-semibold">ACB</span>
-                          <span class="d-block text-muted small">Token account ACB hệ thống.</span>
+                          <span class="d-block text-muted small">Token account ACB.</span>
                         </span>
                       </span>
                     </label>
@@ -1065,7 +1065,7 @@
                         <span class="bank-icon"><i class="bx bx-bank"></i></span>
                         <span>
                           <span class="d-block fw-semibold">Vietcombank</span>
-                          <span class="d-block text-muted small">Token account VCB hệ thống.</span>
+                          <span class="d-block text-muted small">Token account VCB.</span>
                         </span>
                       </span>
                     </label>
@@ -1075,7 +1075,7 @@
                         <span class="bank-icon"><i class="bx bx-buildings"></i></span>
                         <span>
                           <span class="d-block fw-semibold">VPBank</span>
-                          <span class="d-block text-muted small">Token account VPBank hệ thống.</span>
+                          <span class="d-block text-muted small">Token account VPBank.</span>
                         </span>
                       </span>
                     </label>
@@ -1085,7 +1085,7 @@
                         <span class="bank-icon"><i class="bx bx-building-house"></i></span>
                         <span>
                           <span class="d-block fw-semibold">Techcombank</span>
-                          <span class="d-block text-muted small">Token account TCB hệ thống.</span>
+                          <span class="d-block text-muted small">Token account TCB.</span>
                         </span>
                       </span>
                     </label>
@@ -1095,7 +1095,7 @@
                         <span class="bank-icon"><i class="bx bx-bank"></i></span>
                         <span>
                           <span class="d-block fw-semibold">MBBank</span>
-                          <span class="d-block text-muted small">Token account MBBank hệ thống.</span>
+                          <span class="d-block text-muted small">Token account MBBank.</span>
                         </span>
                       </span>
                     </label>
@@ -1107,7 +1107,7 @@
 
                 <div class="info-strip mb-4">
                   <div class="fw-semibold mb-1">Token <span id="receiverTokenBankLabel">{{ $tokenBankType }}</span></div>
-                  <div class="text-muted small">Token phải đúng ngân hàng đã chọn và thuộc account hệ thống. Nếu dán nhầm token ngân hàng khác, hệ thống sẽ báo lỗi thay vì chọn sai tài khoản nhận nạp.</div>
+                  <div class="text-muted small">Token phải đúng ngân hàng đã chọn. Nếu dán nhầm token ngân hàng khác, hệ thống sẽ báo lỗi thay vì chọn sai tài khoản nhận nạp.</div>
                 </div>
 
                 <div class="mb-4">
@@ -1117,7 +1117,7 @@
                             name="receiver_token"
                             rows="5"
                             autocomplete="off"
-                            placeholder="Dán token từ account ngân hàng hệ thống"
+                            placeholder="Dán token từ account ngân hàng"
                             required>{{ $selectedReceiverToken }}</textarea>
                   @error('receiver_token')
                     <div class="invalid-feedback d-block">{{ $message }}</div>

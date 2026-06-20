@@ -173,9 +173,9 @@ class PayinController extends Controller
             default => $this->selectedAcbReceiverAccount((int) $validated['receiver_account_id']),
         };
 
-        if (!$receiverAccount || !is_null($receiverAccount->user_id)) {
+        if (!$receiverAccount) {
             return back()
-                ->withErrors(['receiver_account_id' => 'Tài khoản nhận tiền phải là tài khoản hệ thống do Super Admin thêm.'])
+                ->withErrors(['receiver_account_id' => 'Không tìm thấy tài khoản nhận tiền đã chọn.'])
                 ->withInput();
         }
 
@@ -265,12 +265,6 @@ class PayinController extends Controller
         if (!$receiverAccount) {
             return back()
                 ->withErrors(['receiver_token' => 'Không tìm thấy token này trong account ' . $this->bankLabel($receiverBankType) . '.'])
-                ->withInput();
-        }
-
-        if (!is_null($receiverAccount->user_id)) {
-            return back()
-                ->withErrors(['receiver_token' => 'Token này thuộc account khách hàng, không dùng làm tài khoản nhận nạp hệ thống. Hãy dùng token account hệ thống của Super Admin.'])
                 ->withInput();
         }
 

@@ -17,12 +17,12 @@ return new class extends Migration
     public function up(): void
     {
         foreach ($this->accountTables as $tableName) {
-            if (!Schema::hasTable($tableName) || Schema::hasColumn($tableName, 'scan_failure_count')) {
+            if (!Schema::hasTable($tableName) || Schema::hasColumn($tableName, 'scan_failed_count')) {
                 continue;
             }
 
             Schema::table($tableName, function (Blueprint $table) use ($tableName) {
-                $column = $table->unsignedTinyInteger('scan_failure_count')->default(0);
+                $column = $table->unsignedTinyInteger('scan_failed_count')->default(0);
                 if (Schema::hasColumn($tableName, 'last_scan_error')) {
                     $column->after('last_scan_error');
                 }
@@ -33,12 +33,12 @@ return new class extends Migration
     public function down(): void
     {
         foreach ($this->accountTables as $tableName) {
-            if (!Schema::hasTable($tableName) || !Schema::hasColumn($tableName, 'scan_failure_count')) {
+            if (!Schema::hasTable($tableName) || !Schema::hasColumn($tableName, 'scan_failed_count')) {
                 continue;
             }
 
             Schema::table($tableName, function (Blueprint $table) {
-                $table->dropColumn('scan_failure_count');
+                $table->dropColumn('scan_failed_count');
             });
         }
     }

@@ -158,7 +158,7 @@ class BankRealtimeScannerService
 
         if ($ok) {
             $this->setIfColumn($updates, $table, 'last_synced_at', now()->toDateTimeString());
-            $this->setIfColumn($updates, $table, 'scan_failure_count', 0);
+            $this->setIfColumn($updates, $table, 'scan_failed_count', 0);
             $this->setIfColumn($updates, $table, 'status_note', null);
         }
         if ($balance !== null) {
@@ -183,7 +183,7 @@ class BankRealtimeScannerService
 
         $this->setIfColumn($updates, $table, 'last_scan_status', 'error');
         $this->setIfColumn($updates, $table, 'last_scan_error', $message);
-        $this->setIfColumn($updates, $table, 'scan_failure_count', $failureCount);
+        $this->setIfColumn($updates, $table, 'scan_failed_count', $failureCount);
 
         if ($paused) {
             $note = $pauseImmediately
@@ -207,13 +207,13 @@ class BankRealtimeScannerService
     private function nextFailureCount(Model $model): int
     {
         $table = $model->getTable();
-        if (!Schema::hasColumn($table, 'scan_failure_count')) {
+        if (!Schema::hasColumn($table, 'scan_failed_count')) {
             return 1;
         }
 
-        $current = DB::table($table)->where('id', (int) $model->id)->value('scan_failure_count');
+        $current = DB::table($table)->where('id', (int) $model->id)->value('scan_failed_count');
 
-        return min(255, ((int) ($current ?? $model->scan_failure_count ?? 0)) + 1);
+        return min(255, ((int) ($current ?? $model->scan_failed_count ?? 0)) + 1);
     }
 
     private function looksLikeCredentialError(string $message): bool

@@ -323,7 +323,7 @@
                 @endphp
                 @if(!$account->is_active && $statusReason !== '')
                   <div class="small text-danger mt-1" style="max-width: 220px;">{{ $statusReason }}</div>
-                @elseif($account->is_active && $account->scan_failure_count > 0 && $account->last_scan_error !== '')
+                @elseif($account->is_active && $account->scan_failed_count > 0 && $account->last_scan_error !== '')
                   <div class="small text-warning mt-1" style="max-width: 220px;">Lỗi gần nhất: {{ $account->last_scan_error }}</div>
                 @endif
               </td>
@@ -403,7 +403,7 @@
               @endphp
               @if(!$account->is_active && $statusReason !== '')
                 <div class="small text-danger mt-1">{{ $statusReason }}</div>
-              @elseif($account->is_active && $account->scan_failure_count > 0 && $account->last_scan_error !== '')
+              @elseif($account->is_active && $account->scan_failed_count > 0 && $account->last_scan_error !== '')
                 <div class="small text-warning mt-1">Lỗi gần nhất: {{ $account->last_scan_error }}</div>
               @endif
             </div>

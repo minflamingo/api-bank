@@ -487,8 +487,8 @@ class BankAccountsController extends Controller
         if (Schema::hasColumn($table, 'status_note')) {
             $updates['status_note'] = $active ? null : $note;
         }
-        if ($active && Schema::hasColumn($table, 'scan_failure_count')) {
-            $updates['scan_failure_count'] = 0;
+        if ($active && Schema::hasColumn($table, 'scan_failed_count')) {
+            $updates['scan_failed_count'] = 0;
         }
         if ($active && Schema::hasColumn($table, 'last_scan_status')) {
             $updates['last_scan_status'] = null;
@@ -563,7 +563,7 @@ class BankAccountsController extends Controller
             'status_badge_class' => $active ? 'success' : 'secondary',
             'status_note' => (string) ($row->status_note ?? ''),
             'last_scan_error' => (string) ($row->last_scan_error ?? ''),
-            'scan_failure_count' => (int) ($row->scan_failure_count ?? 0),
+            'scan_failed_count' => (int) ($row->scan_failed_count ?? 0),
             'status_url' => route('bank.accounts.status', ['bank' => $bank, 'id' => $row->id]),
         ];
     }

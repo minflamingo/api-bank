@@ -13,6 +13,7 @@ $adminLinks = [
     ['label' => 'User đã đăng ký', 'href' => route('admin.users'), 'icon' => 'bx-user', 'active' => $currentRouteName === 'admin.users'],
     ['label' => 'Đang đăng nhập', 'href' => route('admin.sessions'), 'icon' => 'bx-log-in-circle', 'active' => $currentRouteName === 'admin.sessions'],
     ['label' => 'Lịch sử nạp tiền', 'href' => route('admin.recharges'), 'icon' => 'bx-wallet', 'active' => $currentRouteName === 'admin.recharges'],
+    ['label' => 'Ví & ledger', 'href' => route('admin.wallet'), 'icon' => 'bx-money', 'active' => $currentRouteName === 'admin.wallet'],
     ['label' => 'Nhật ký hệ thống', 'href' => route('admin.logs'), 'icon' => 'bx-list-ul', 'active' => $currentRouteName === 'admin.logs'],
     ['label' => 'Tài khoản ngân hàng', 'href' => route('admin.bank-accounts.index'), 'icon' => 'bx-credit-card', 'active' => $currentRouteName === 'admin.bank-accounts.index'],
     ['label' => 'Cấu hình nạp tiền', 'href' => route('admin.recharge-settings.edit'), 'icon' => 'bx-cog', 'active' => $currentRouteName === 'admin.recharge-settings.edit'],

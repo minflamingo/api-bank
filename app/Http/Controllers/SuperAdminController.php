@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\WalletLedger;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -32,6 +33,105 @@ class SuperAdminController extends Controller
     public function logs(Request $request)
     {
         return $this->dashboard($request, 'logs');
+    }
+
+    public function wallet(Request $request)
+    {
+        return $this->dashboard($request, 'wallet');
+    }
+
+    public function grantWallet(Request $request)
+    {
+        $admin = Auth::user();
+        abort_unless($admin && (int) $admin->role === 1, 403);
+
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+            'amount' => ['required', 'integer', 'min:1000', 'max:1000000000'],
+            'note' => ['required', 'string', 'min:3', 'max:500'],
+        ], [
+            'user_id.exists' => 'Không tìm thấy user cần tặng tiền.',
+            'amount.min' => 'Số tiền tặng tối thiểu là 1.000đ.',
+            'amount.max' => 'Số tiền tặng tối đa mỗi lần là 1.000.000.000đ.',
+            'note.required' => 'Vui lòng ghi lý do tặng tiền.',
+        ]);
+
+        if (!WalletLedger::available()) {
+            return redirect()
+                ->route('admin.wallet')
+                ->with('error', 'Bảng wallet_ledgers chưa sẵn sàng, chưa thể tặng tiền.');
+        }
+
+        try {
+            $message = DB::transaction(function () use ($validated, $admin, $request) {
+                $target = DB::table('users')
+                    ->where('id', (int) $validated['user_id'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$target) {
+                    throw new \RuntimeException('Không tìm thấy user cần tặng tiền.');
+                }
+
+                $amount = (int) $validated['amount'];
+                $before = (int) ($target->amount ?? 0);
+                $after = $before + $amount;
+                $note = trim((string) $validated['note']);
+                $reference = WalletLedger::makeReference('admin_grant', (int) $target->id);
+
+                WalletLedger::ensureOpeningBalance((int) $target->id, $before);
+
+                DB::table('users')->where('id', (int) $target->id)->update([
+                    'amount' => $after,
+                    'updated_at' => now(),
+                ]);
+
+                WalletLedger::record(
+                    (int) $target->id,
+                    $amount,
+                    'admin_grant',
+                    $reference,
+                    $note,
+                    (int) $admin->id,
+                    $before,
+                    $after,
+                    [
+                        'admin_id' => (int) $admin->id,
+                        'admin_email' => (string) ($admin->email ?? ''),
+                        'target_email' => (string) ($target->email ?? ''),
+                    ]
+                );
+
+                DB::table('xlogs')->insert([
+                    'ip' => $request->ip(),
+                    'user' => (int) $admin->id,
+                    'log' => 'Tặng tiền ví user',
+                    'notes' => sprintf(
+                        'Admin #%d tặng %sđ cho user #%d. Trước: %sđ, sau: %sđ. Lý do: %s. Ref: %s',
+                        $admin->id,
+                        number_format($amount),
+                        $target->id,
+                        number_format($before),
+                        number_format($after),
+                        $note,
+                        $reference
+                    ),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                return 'Đã tặng ' . number_format($amount) . 'đ cho user #' . $target->id . '.';
+            });
+        } catch (\RuntimeException $e) {
+            return redirect()
+                ->route('admin.wallet')
+                ->withInput()
+                ->with('error', $e->getMessage());
+        }
+
+        return redirect()
+            ->route('admin.wallet')
+            ->with('success', $message);
     }
 
 
@@ -124,6 +224,17 @@ class SuperAdminController extends Controller
         $sessions = null;
         $recharges = null;
         $logs = null;
+        $walletLedgers = null;
+        $ledgerAlerts = collect();
+        $ledgerStats = [
+            'available' => WalletLedger::available(),
+            'baseline_created' => 0,
+            'wallet_total' => 0,
+            'ledger_total' => 0,
+            'delta_total' => 0,
+            'alert_count' => 0,
+            'grant_today' => 0,
+        ];
 
         $stats = [
             'users_total' => DB::table('users')->count(),
@@ -247,6 +358,53 @@ class SuperAdminController extends Controller
                 ->appends($request->query());
         }
 
+        if ($section === 'wallet') {
+            $ledgerStats['wallet_total'] = (int) DB::table('users')->sum('amount');
+
+            if ($ledgerStats['available']) {
+                $ledgerStats['baseline_created'] = WalletLedger::ensureOpeningBalances();
+                $ledgerStats['ledger_total'] = (int) DB::table('wallet_ledgers')->sum('amount');
+                $ledgerStats['delta_total'] = $ledgerStats['wallet_total'] - $ledgerStats['ledger_total'];
+                $ledgerStats['grant_today'] = (int) DB::table('wallet_ledgers')
+                    ->where('type', 'admin_grant')
+                    ->where('created_at', '>=', $today)
+                    ->sum('amount');
+
+                $alertsQuery = $this->ledgerAlertQuery();
+                $ledgerStats['alert_count'] = (clone $alertsQuery)->count();
+                $ledgerAlerts = (clone $alertsQuery)
+                    ->orderByRaw('ABS(COALESCE(users.amount, 0) - COALESCE(wallet_totals.ledger_amount, 0)) DESC')
+                    ->orderByDesc('users.id')
+                    ->limit(100)
+                    ->get();
+
+                $walletLedgers = DB::table('wallet_ledgers')
+                    ->leftJoin('users', 'wallet_ledgers.user_id', '=', 'users.id')
+                    ->leftJoin('users as actors', 'wallet_ledgers.actor_id', '=', 'actors.id')
+                    ->select([
+                        'wallet_ledgers.id',
+                        'wallet_ledgers.user_id',
+                        'wallet_ledgers.actor_id',
+                        'wallet_ledgers.type',
+                        'wallet_ledgers.direction',
+                        'wallet_ledgers.amount',
+                        'wallet_ledgers.balance_before',
+                        'wallet_ledgers.balance_after',
+                        'wallet_ledgers.reference',
+                        'wallet_ledgers.description',
+                        'wallet_ledgers.created_at',
+                        'users.name',
+                        'users.email',
+                        'users.display_name',
+                        'actors.name as actor_name',
+                        'actors.email as actor_email',
+                    ])
+                    ->orderByDesc('wallet_ledgers.id')
+                    ->simplePaginate(25, ['*'], 'ledger_page')
+                    ->appends($request->query());
+            }
+        }
+
         $roleLabels = [
             1 => ['label' => 'Super Admin', 'class' => 'bg-label-danger'],
             2 => ['label' => 'Admin', 'class' => 'bg-label-warning'],
@@ -257,6 +415,8 @@ class SuperAdminController extends Controller
         return view('admin.dashboard', compact(
             'activeSince',
             'logs',
+            'ledgerAlerts',
+            'ledgerStats',
             'recharges',
             'roleLabels',
             'search',
@@ -264,7 +424,8 @@ class SuperAdminController extends Controller
             'section',
             'sessionLifetime',
             'stats',
-            'users'
+            'users',
+            'walletLedgers'
         ));
     }
 
@@ -291,5 +452,43 @@ class SuperAdminController extends Controller
             ->whereNotNull($column)
             ->where($column, '<>', '')
             ->count();
+    }
+
+    private function ledgerAlertQuery()
+    {
+        $walletTotals = DB::table('wallet_ledgers')
+            ->select([
+                'user_id',
+                DB::raw('SUM(amount) as ledger_amount'),
+                DB::raw('COUNT(*) as ledger_count'),
+                DB::raw('MAX(created_at) as last_ledger_at'),
+            ])
+            ->groupBy('user_id');
+
+        return DB::table('users')
+            ->leftJoinSub($walletTotals, 'wallet_totals', function ($join) {
+                $join->on('users.id', '=', 'wallet_totals.user_id');
+            })
+            ->select([
+                'users.id',
+                'users.name',
+                'users.email',
+                'users.display_name',
+                'users.amount as wallet_amount',
+                DB::raw('COALESCE(wallet_totals.ledger_amount, 0) as ledger_amount'),
+                DB::raw('COALESCE(wallet_totals.ledger_count, 0) as ledger_count'),
+                DB::raw('wallet_totals.last_ledger_at as last_ledger_at'),
+                DB::raw('(COALESCE(users.amount, 0) - COALESCE(wallet_totals.ledger_amount, 0)) as ledger_delta'),
+            ])
+            ->whereExists(function ($query) {
+                $query->selectRaw('1')
+                    ->from('wallet_ledgers as opening_ledgers')
+                    ->whereColumn('opening_ledgers.user_id', 'users.id')
+                    ->where('opening_ledgers.type', 'opening_balance');
+            })
+            ->where(function ($query) {
+                $query->whereRaw('ABS(COALESCE(users.amount, 0) - COALESCE(wallet_totals.ledger_amount, 0)) >= 1')
+                    ->orWhereRaw('COALESCE(users.amount, 0) < 0');
+            });
     }
 }

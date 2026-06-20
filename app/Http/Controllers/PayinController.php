@@ -6,6 +6,7 @@ use App\Models\Bank;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Support\ApiPackage;
+use App\Support\WalletLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -938,6 +939,7 @@ class PayinController extends Controller
                 $lockedUser = DB::table('users')->where('id', $user->id)->lockForUpdate()->first();
                 $preview = $this->upgradePreview($lockedUser, $planKey, $plan, $total, $months);
                 $wallet = (int) ($lockedUser->amount ?? 0);
+                WalletLedger::ensureOpeningBalance((int) $user->id, $wallet);
 
                 if ($preview['action'] === 'schedule_downgrade') {
                     DB::table('users')->where('id', $user->id)->update([
@@ -977,9 +979,10 @@ class PayinController extends Controller
                         ? (int) $lockedUser->time_end
                         : $startedAt;
                     $newTimeEnd = $baseTime + (86400 * 30 * $months);
+                    $newWallet = $wallet - $total;
 
                     DB::table('users')->where('id', $user->id)->update([
-                        'amount' => $wallet - $total,
+                        'amount' => $newWallet,
                         'time_end' => $newTimeEnd,
                         'api_plan' => $planKey,
                         'api_account_limit' => (int) $plan['limit'],
@@ -991,6 +994,24 @@ class PayinController extends Controller
                         'api_next_plan_price' => 0,
                         'api_next_plan_scheduled_at' => 0,
                     ]);
+
+                    WalletLedger::record(
+                        (int) $user->id,
+                        -abs((int) $total),
+                        'api_package_payment',
+                        WalletLedger::makeReference('api_package_renew', (int) $user->id),
+                        'Gia hạn cùng gói API: ' . $plan['name'] . ' - ' . $months . ' tháng',
+                        (int) $user->id,
+                        $wallet,
+                        $newWallet,
+                        [
+                            'action' => 'renew',
+                            'plan' => $planKey,
+                            'months' => $months,
+                            'price' => $total,
+                            'time_end' => $newTimeEnd,
+                        ]
+                    );
 
                     DB::table('xlogs')->insert([
                         'ip' => request()->ip(),
@@ -1023,9 +1044,11 @@ class PayinController extends Controller
 
                 $startedAt = time();
                 $newTimeEnd = $startedAt + (86400 * 30 * $months);
+                $walletAfterRefund = $wallet + (int) $refund['amount'];
+                $newWallet = $walletAfterRefund - $total;
 
                 DB::table('users')->where('id', $user->id)->update([
-                    'amount' => $wallet + $refund['amount'] - $total,
+                    'amount' => $newWallet,
                     'time_end' => $newTimeEnd,
                     'api_plan' => $planKey,
                     'api_account_limit' => (int) $plan['limit'],
@@ -1037,6 +1060,43 @@ class PayinController extends Controller
                     'api_next_plan_price' => 0,
                     'api_next_plan_scheduled_at' => 0,
                 ]);
+
+                if ((int) $refund['amount'] > 0) {
+                    WalletLedger::record(
+                        (int) $user->id,
+                        (int) $refund['amount'],
+                        'api_package_refund',
+                        WalletLedger::makeReference('api_package_refund', (int) $user->id),
+                        'Hoàn phần còn lại của gói API cũ khi đổi gói',
+                        (int) $user->id,
+                        $wallet,
+                        $walletAfterRefund,
+                        [
+                            'action' => 'change_plan',
+                            'new_plan' => $planKey,
+                            'remaining_days' => (int) ($refund['remaining_days'] ?? 0),
+                        ]
+                    );
+                }
+
+                WalletLedger::record(
+                    (int) $user->id,
+                    -abs((int) $total),
+                    'api_package_payment',
+                    WalletLedger::makeReference('api_package_change', (int) $user->id),
+                    'Thanh toán gói API mới: ' . $plan['name'] . ' - ' . $months . ' tháng',
+                    (int) $user->id,
+                    $walletAfterRefund,
+                    $newWallet,
+                    [
+                        'action' => 'change_plan',
+                        'plan' => $planKey,
+                        'months' => $months,
+                        'price' => $total,
+                        'refund' => (int) $refund['amount'],
+                        'time_end' => $newTimeEnd,
+                    ]
+                );
 
                 DB::table('xlogs')->insert([
                     'ip' => request()->ip(),

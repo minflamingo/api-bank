@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Invoice;
 use App\Models\Bank;
 use App\Support\BankTransactionRecorder;
+use App\Support\WalletLedger;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
@@ -96,7 +97,7 @@ class CronController extends Controller
                         ]);
 
                         $note = "Nạp tiền tự động qua ACB (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-                        $this->plusCredits($userRow->id, $amount, $note);
+                        $this->plusCredits($userRow->id, $amount, $note, 'recharge:acb:' . $tranId);
 
                         // Gửi Telegram
                         $txttele = "GIAO DỊCH NẠP TIỀN\n";
@@ -184,7 +185,7 @@ class CronController extends Controller
                             'create_time'    => time()
                         ]);
                         $note = "Nạp tiền tự động qua VCB (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-                        $this->plusCredits($userRow->id, $amount, $note);
+                        $this->plusCredits($userRow->id, $amount, $note, 'recharge:vcb:' . $tranId);
 
                         // Gửi Telegram
                         $txttele = "GIAO DỊCH NẠP TIỀN\n";
@@ -299,7 +300,7 @@ class CronController extends Controller
             ]);
 
             $note = "Nạp tiền tự động qua VPBank (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-            $this->plusCredits($userRow->id, $amount, $note);
+            $this->plusCredits($userRow->id, $amount, $note, 'recharge:vpbank:' . $tranId);
 
             $txttele = "GIAO DỊCH NẠP TIỀN\n";
             $txttele .= "Người dùng: {$userRow->id}\n";
@@ -407,7 +408,7 @@ class CronController extends Controller
             ]);
 
             $note = "Nạp tiền tự động qua Techcombank (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-            $this->plusCredits($userRow->id, $amount, $note);
+            $this->plusCredits($userRow->id, $amount, $note, 'recharge:techcombank:' . $tranId);
 
             $txttele = "GIAO DỊCH NẠP TIỀN\n";
             $txttele .= "Người dùng: {$userRow->id}\n";
@@ -551,7 +552,7 @@ class CronController extends Controller
             ]);
 
             $note = "Nạp tiền tự động qua MBBank (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-            $this->plusCredits($userRow->id, $amount, $note);
+            $this->plusCredits($userRow->id, $amount, $note, 'recharge:mbbank:' . $tranId);
 
             $txttele = "GIAO DỊCH NẠP TIỀN\n";
             $txttele .= "Người dùng: {$userRow->id}\n";
@@ -702,9 +703,9 @@ class CronController extends Controller
         return $default;
     }
 
-    private function plusCredits($user_id, $amount, $reason)
+    private function plusCredits($user_id, $amount, $reason, ?string $reference = null)
     {
-        DB::transaction(function () use ($user_id, $amount, $reason) {
+        DB::transaction(function () use ($user_id, $amount, $reason, $reference) {
             $user = DB::table('users')->where('id', $user_id)->lockForUpdate()->first();
             if (!$user) {
                 return;
@@ -714,10 +715,24 @@ class CronController extends Controller
             $before = (int) ($user->amount ?? 0);
             $after = $before + $amount;
 
+            WalletLedger::ensureOpeningBalance((int) $user_id, $before);
+
             DB::table('users')->where('id', $user_id)->update([
                 'amount' => $after,
                 'total_paid' => DB::raw('COALESCE(total_paid, 0) + ' . max(0, $amount)),
             ]);
+
+            WalletLedger::record(
+                (int) $user_id,
+                $amount,
+                'recharge_credit',
+                $reference ?: WalletLedger::makeReference('recharge_credit', (int) $user_id),
+                $reason,
+                null,
+                $before,
+                $after,
+                ['source' => 'recharge_scan']
+            );
 
             DB::table('xlogs')->insert([
                 'ip' => request()->ip(),

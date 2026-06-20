@@ -154,8 +154,12 @@ class ApiPackage
             }
 
             $newTimeEnd = $now + (86400 * 30 * $nextMonths);
+            $walletBefore = (int) ($lockedUser->amount ?? 0);
+            $walletAfter = $walletBefore - $price;
+            WalletLedger::ensureOpeningBalance((int) $lockedUser->id, $walletBefore);
+
             $lockedUser->forceFill([
-                'amount' => (int) ($lockedUser->amount ?? 0) - $price,
+                'amount' => $walletAfter,
                 'time_end' => $newTimeEnd,
                 'api_plan' => $nextPlanKey,
                 'api_account_limit' => (int) $nextPlan['limit'],
@@ -167,6 +171,24 @@ class ApiPackage
                 'api_next_plan_price' => 0,
                 'api_next_plan_scheduled_at' => 0,
             ])->save();
+
+            WalletLedger::record(
+                (int) $lockedUser->id,
+                -abs((int) $price),
+                'api_package_payment',
+                WalletLedger::makeReference('api_package_scheduled', (int) $lockedUser->id),
+                'Kích hoạt gói API kỳ sau: ' . $nextPlan['name'] . ' - ' . $nextMonths . ' tháng',
+                (int) $lockedUser->id,
+                $walletBefore,
+                $walletAfter,
+                [
+                    'action' => 'scheduled_plan',
+                    'plan' => $nextPlanKey,
+                    'months' => $nextMonths,
+                    'price' => $price,
+                    'time_end' => $newTimeEnd,
+                ]
+            );
 
             DB::table('xlogs')->insert([
                 'ip' => request()->ip(),

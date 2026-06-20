@@ -78,6 +78,7 @@
       'users' => 'admin.users',
       'sessions' => 'admin.sessions',
       'recharges' => 'admin.recharges',
+      'wallet' => 'admin.wallet',
       'logs' => 'admin.logs',
   ];
   $sectionMetaMap = [
@@ -85,6 +86,7 @@
       'users' => ['label' => 'User đã đăng ký', 'hint' => 'Danh sách user, tìm theo ID, tên, email hoặc số điện thoại.'],
       'sessions' => ['label' => 'Đang đăng nhập', 'hint' => 'Session đăng nhập, sắp xếp theo hoạt động mới nhất.'],
       'recharges' => ['label' => 'Lịch sử nạp tiền', 'hint' => 'Giao dịch nạp từ các ngân hàng nhận nạp, mới nhất ở trên cùng.'],
+      'wallet' => ['label' => 'Ví & ledger', 'hint' => 'Tặng tiền có ghi sổ và kiểm tra số dư lệch ledger.'],
       'logs' => ['label' => 'Nhật ký hệ thống', 'hint' => 'Đăng nhập, gia hạn, cấu hình và thao tác vận hành.'],
   ];
   $sectionMeta = $sectionMetaMap[$section] ?? $sectionMetaMap['overview'];
@@ -103,6 +105,7 @@
       ['label' => 'User đã đăng ký', 'value' => number_format($stats['users_total']), 'hint' => number_format($stats['users_today']) . ' user mới hôm nay', 'icon' => 'bx-user', 'class' => 'bg-label-primary text-primary', 'href' => route('admin.users')],
       ['label' => 'Đang đăng nhập', 'value' => number_format($stats['online_sessions']), 'hint' => 'Trong ' . $sessionLifetime . ' phút gần nhất', 'icon' => 'bx-log-in-circle', 'class' => 'bg-label-success text-success', 'href' => route('admin.sessions')],
       ['label' => 'Lịch sử nạp tiền', 'value' => $money($stats['recharge_today']), 'hint' => number_format($stats['invoices_today']) . ' giao dịch hôm nay', 'icon' => 'bx-wallet', 'class' => 'bg-label-warning text-warning', 'href' => route('admin.recharges')],
+      ['label' => 'Ví & ledger', 'value' => $money($stats['wallet_balance']), 'hint' => 'Tặng tiền và audit lệch ví', 'icon' => 'bx-money', 'class' => 'bg-label-primary text-primary', 'href' => route('admin.wallet')],
       ['label' => 'Nhật ký hệ thống', 'value' => 'Logs', 'hint' => 'Theo dõi thao tác vận hành', 'icon' => 'bx-list-ul', 'class' => 'bg-label-secondary text-secondary', 'href' => route('admin.logs')],
   ];
 @endphp
@@ -232,16 +235,21 @@
                 <td>{{ $row->ip ?: '-' }}</td>
                 <td>{{ $dateTime($row->created_at) }}</td>
                 <td>
-                  @if((int) $row->id === (int) auth()->id())
-                    <span class="badge bg-label-secondary">Đang dùng</span>
-                  @else
-                    <form method="POST" action="{{ route('admin.users.impersonate', $row->id) }}" class="mb-0" onsubmit="return confirm('Đăng nhập dưới dạng user #{{ $row->id }}?');">
-                      @csrf
-                      <button type="submit" class="btn btn-sm btn-outline-primary">
-                        <i class="bx bx-log-in-circle me-1"></i>Vào vai
-                      </button>
-                    </form>
-                  @endif
+                  <div class="d-flex flex-wrap gap-2">
+                    <a class="btn btn-sm btn-outline-success" href="{{ route('admin.wallet', ['user_id' => $row->id]) }}">
+                      <i class="bx bx-money me-1"></i>Tặng tiền
+                    </a>
+                    @if((int) $row->id === (int) auth()->id())
+                      <span class="badge bg-label-secondary align-self-center">Đang dùng</span>
+                    @else
+                      <form method="POST" action="{{ route('admin.users.impersonate', $row->id) }}" class="mb-0" onsubmit="return confirm('Đăng nhập dưới dạng user #{{ $row->id }}?');">
+                        @csrf
+                        <button type="submit" class="btn btn-sm btn-outline-primary">
+                          <i class="bx bx-log-in-circle me-1"></i>Vào vai
+                        </button>
+                      </form>
+                    @endif
+                  </div>
                 </td>
               </tr>
             @empty
@@ -296,6 +304,194 @@
       </div>
       @include('admin._simple-pager', ['items' => $sessions])
     </div>
+  @endif
+
+  @if($section === 'wallet')
+    @if(!$ledgerStats['available'])
+      <div class="alert alert-warning">
+        Bảng <code>wallet_ledgers</code> chưa tồn tại. Hãy chạy migration trước khi tặng tiền hoặc audit ledger.
+      </div>
+    @else
+      @if(($ledgerStats['baseline_created'] ?? 0) > 0)
+        <div class="alert alert-info">
+          Đã tạo số dư khởi tạo ledger cho {{ number_format($ledgerStats['baseline_created']) }} user chưa có baseline.
+        </div>
+      @endif
+
+      <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-xl-3">
+          <div class="card soft-card stat-card h-100">
+            <div class="card-body">
+              <div class="text-muted small mb-1">Tổng ví user</div>
+              <h4 class="mb-1">{{ $money($ledgerStats['wallet_total']) }}</h4>
+              <div class="text-muted small">Theo bảng users</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+          <div class="card soft-card stat-card h-100">
+            <div class="card-body">
+              <div class="text-muted small mb-1">Tổng ledger</div>
+              <h4 class="mb-1">{{ $money($ledgerStats['ledger_total']) }}</h4>
+              <div class="text-muted small">Tổng bút toán đã ghi</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+          <div class="card soft-card stat-card h-100">
+            <div class="card-body">
+              <div class="text-muted small mb-1">Lệch toàn hệ thống</div>
+              <h4 class="mb-1 {{ (int) $ledgerStats['delta_total'] === 0 ? 'text-success' : 'text-danger' }}">{{ $money($ledgerStats['delta_total']) }}</h4>
+              <div class="text-muted small">users.amount - ledger</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-xl-3">
+          <div class="card soft-card stat-card h-100">
+            <div class="card-body">
+              <div class="text-muted small mb-1">Cảnh báo</div>
+              <h4 class="mb-1 {{ (int) $ledgerStats['alert_count'] === 0 ? 'text-success' : 'text-danger' }}">{{ number_format($ledgerStats['alert_count']) }}</h4>
+              <div class="text-muted small">User lệch ví hoặc âm ví</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-xl-4">
+          <div class="card soft-card h-100">
+            <div class="card-header">
+              <h5 class="mb-1">Tặng tiền cho user</h5>
+              <div class="text-muted small">Mỗi lần tặng đều khóa số dư, ghi ledger và log admin.</div>
+            </div>
+            <div class="card-body">
+              <form method="POST" action="{{ route('admin.wallet.grant') }}" class="d-grid gap-3">
+                @csrf
+                <div>
+                  <label class="form-label">ID user</label>
+                  <input class="form-control @error('user_id') is-invalid @enderror" name="user_id" value="{{ old('user_id', request('user_id')) }}" inputmode="numeric" placeholder="Ví dụ: 1001" required>
+                  @error('user_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+                <div>
+                  <label class="form-label">Số tiền tặng</label>
+                  <input class="form-control @error('amount') is-invalid @enderror" name="amount" value="{{ old('amount') }}" inputmode="numeric" placeholder="50000" required>
+                  @error('amount')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+                <div>
+                  <label class="form-label">Lý do</label>
+                  <textarea class="form-control @error('note') is-invalid @enderror" name="note" rows="3" placeholder="Ví dụ: Tặng bù lỗi nạp tiền, chăm sóc khách hàng..." required>{{ old('note') }}</textarea>
+                  @error('note')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+                <button type="submit" class="btn btn-success" onclick="return confirm('Xác nhận tặng tiền và ghi ledger cho user này?');">
+                  <i class="bx bx-plus-circle me-1"></i>Tặng tiền
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-8">
+          <div class="card soft-card h-100">
+            <div class="card-header d-flex justify-content-between gap-3">
+              <div>
+                <h5 class="mb-1">Kiểm tra lệch ledger</h5>
+                <div class="text-muted small">Chỉ những tài khoản có số dư lệch ledger hoặc ví âm mới hiện ở đây.</div>
+              </div>
+              <span class="badge {{ (int) $ledgerStats['alert_count'] === 0 ? 'bg-label-success' : 'bg-label-danger' }}">
+                {{ number_format($ledgerStats['alert_count']) }} cảnh báo
+              </span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Số dư ví</th>
+                    <th>Ledger</th>
+                    <th>Lệch</th>
+                    <th>Bút toán</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @forelse($ledgerAlerts as $alert)
+                    <tr>
+                      <td>
+                        <div class="fw-semibold">#{{ $alert->id }} · {{ $alert->display_name ?: $alert->name ?: 'User' }}</div>
+                        <div class="text-muted small">{{ $alert->email ?: '-' }}</div>
+                      </td>
+                      <td class="fw-semibold">{{ $money($alert->wallet_amount) }}</td>
+                      <td>{{ $money($alert->ledger_amount) }}</td>
+                      <td class="fw-semibold text-danger">{{ $money($alert->ledger_delta) }}</td>
+                      <td>
+                        <div>{{ number_format($alert->ledger_count) }} dòng</div>
+                        <div class="text-muted small">{{ $dateTime($alert->last_ledger_at) }}</div>
+                      </td>
+                    </tr>
+                  @empty
+                    <tr><td colspan="5" class="text-center text-muted py-4">Ledger đang khớp, chưa thấy tài khoản bất thường.</td></tr>
+                  @endforelse
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card soft-card">
+        <div class="card-header">
+          <h5 class="mb-1">Lịch sử ledger</h5>
+          <div class="text-muted small">Bút toán mới nhất, gồm nạp tiền, tặng tiền và trừ tiền gói API.</div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Loại</th>
+                <th>Số tiền</th>
+                <th>Số dư</th>
+                <th>Actor</th>
+                <th>Thời gian</th>
+                <th>Ghi chú</th>
+              </tr>
+            </thead>
+            <tbody>
+              @forelse($walletLedgers as $entry)
+                <tr>
+                  <td>
+                    <div class="fw-semibold">#{{ $entry->user_id }} · {{ $entry->display_name ?: $entry->name ?: 'User' }}</div>
+                    <div class="text-muted small">{{ $entry->email ?: '-' }}</div>
+                  </td>
+                  <td>
+                    <span class="badge bg-label-secondary">{{ $entry->type }}</span>
+                    <div class="text-muted small cell-wrap">{{ $entry->reference }}</div>
+                  </td>
+                  <td class="fw-semibold {{ (int) $entry->amount >= 0 ? 'text-success' : 'text-danger' }}">
+                    {{ (int) $entry->amount >= 0 ? '+' : '' }}{{ $money($entry->amount) }}
+                  </td>
+                  <td>
+                    <div>{{ $money($entry->balance_before) }}</div>
+                    <div class="text-muted small">-> {{ $money($entry->balance_after) }}</div>
+                  </td>
+                  <td>
+                    @if($entry->actor_id)
+                      <div>#{{ $entry->actor_id }} · {{ $entry->actor_name ?: 'Admin' }}</div>
+                      <div class="text-muted small">{{ $entry->actor_email ?: '-' }}</div>
+                    @else
+                      <span class="text-muted">Hệ thống</span>
+                    @endif
+                  </td>
+                  <td>{{ $dateTime($entry->created_at) }}</td>
+                  <td class="cell-wrap">{{ $entry->description ?: '-' }}</td>
+                </tr>
+              @empty
+                <tr><td colspan="7" class="text-center text-muted py-4">Chưa có ledger.</td></tr>
+              @endforelse
+            </tbody>
+          </table>
+        </div>
+        @include('admin._simple-pager', ['items' => $walletLedgers])
+      </div>
+    @endif
   @endif
 
   @if($section === 'logs')
@@ -398,6 +594,7 @@
     users: @json(route('admin.users')),
     sessions: @json(route('admin.sessions')),
     recharges: @json(route('admin.recharges')),
+    wallet: @json(route('admin.wallet')),
     logs: @json(route('admin.logs')),
   };
   const target = redirects[window.location.hash.replace('#', '')];

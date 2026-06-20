@@ -168,6 +168,8 @@ Route::middleware(['auth','checkRole:1,2,3'])->group(function () {
             ->name('admin.users.impersonate');
         Route::get('/admin/sessions', [SuperAdminController::class, 'sessions'])->name('admin.sessions');
         Route::get('/admin/recharges', [SuperAdminController::class, 'recharges'])->name('admin.recharges');
+        Route::get('/admin/wallet', [SuperAdminController::class, 'wallet'])->name('admin.wallet');
+        Route::post('/admin/wallet/grant', [SuperAdminController::class, 'grantWallet'])->name('admin.wallet.grant');
         Route::get('/admin/logs', [SuperAdminController::class, 'logs'])->name('admin.logs');
         Route::get('/admin/bank-accounts', [BankAccountsController::class, 'adminIndex'])->name('admin.bank-accounts.index');
         Route::get('/admin/recharge-settings', [PayinController::class, 'rechargeSettings'])->name('admin.recharge-settings.edit');

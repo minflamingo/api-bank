@@ -170,6 +170,7 @@ Route::middleware(['auth','checkRole:1,2,3'])->group(function () {
         Route::get('/admin/recharges', [SuperAdminController::class, 'recharges'])->name('admin.recharges');
         Route::get('/admin/wallet', [SuperAdminController::class, 'wallet'])->name('admin.wallet');
         Route::post('/admin/wallet/grant', [SuperAdminController::class, 'grantWallet'])->name('admin.wallet.grant');
+        Route::post('/admin/wallet/deduct', [SuperAdminController::class, 'deductWallet'])->name('admin.wallet.deduct');
         Route::get('/admin/logs', [SuperAdminController::class, 'logs'])->name('admin.logs');
         Route::get('/admin/bank-monitor', [SuperAdminController::class, 'bankMonitor'])->name('admin.bank-monitor');
         Route::post('/admin/bank-monitor/accounts/{bank}/{id}/status', [SuperAdminController::class, 'updateBankAccountStatus'])

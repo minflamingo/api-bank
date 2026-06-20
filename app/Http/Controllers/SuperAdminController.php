@@ -43,42 +43,64 @@ class SuperAdminController extends Controller
 
     public function grantWallet(Request $request)
     {
+        return $this->adjustWallet($request, 'grant');
+    }
+
+    public function deductWallet(Request $request)
+    {
+        return $this->adjustWallet($request, 'deduct');
+    }
+
+    private function adjustWallet(Request $request, string $mode)
+    {
         $admin = Auth::user();
         abort_unless($admin && (int) $admin->role === 1, 403);
+
+        $isDeduct = $mode === 'deduct';
+        $verb = $isDeduct ? 'trừ' : 'tặng';
+        $type = $isDeduct ? 'admin_deduct' : 'admin_grant';
 
         $validated = $request->validate([
             'user_id' => ['required', 'integer', 'exists:users,id'],
             'amount' => ['required', 'integer', 'min:1000', 'max:1000000000'],
             'note' => ['required', 'string', 'min:3', 'max:500'],
         ], [
-            'user_id.exists' => 'Không tìm thấy user cần tặng tiền.',
-            'amount.min' => 'Số tiền tặng tối thiểu là 1.000đ.',
-            'amount.max' => 'Số tiền tặng tối đa mỗi lần là 1.000.000.000đ.',
-            'note.required' => 'Vui lòng ghi lý do tặng tiền.',
+            'user_id.exists' => 'Không tìm thấy user cần ' . $verb . ' tiền.',
+            'amount.min' => 'Số tiền ' . $verb . ' tối thiểu là 1.000đ.',
+            'amount.max' => 'Số tiền ' . $verb . ' tối đa mỗi lần là 1.000.000.000đ.',
+            'note.required' => 'Vui lòng ghi lý do ' . $verb . ' tiền.',
         ]);
 
         if (!WalletLedger::available()) {
             return redirect()
                 ->route('admin.wallet')
-                ->with('error', 'Bảng wallet_ledgers chưa sẵn sàng, chưa thể tặng tiền.');
+                ->with('error', 'Bảng wallet_ledgers chưa sẵn sàng, chưa thể ' . $verb . ' tiền.');
         }
 
         try {
-            $message = DB::transaction(function () use ($validated, $admin, $request) {
+            $message = DB::transaction(function () use ($validated, $admin, $request, $isDeduct, $type, $verb) {
                 $target = DB::table('users')
                     ->where('id', (int) $validated['user_id'])
                     ->lockForUpdate()
                     ->first();
 
                 if (!$target) {
-                    throw new \RuntimeException('Không tìm thấy user cần tặng tiền.');
+                    throw new \RuntimeException('Không tìm thấy user cần ' . $verb . ' tiền.');
                 }
 
                 $amount = (int) $validated['amount'];
+                $signedAmount = $isDeduct ? -$amount : $amount;
                 $before = (int) ($target->amount ?? 0);
-                $after = $before + $amount;
+                $after = $before + $signedAmount;
+
+                if ($isDeduct && $after < 0) {
+                    throw new \RuntimeException(
+                        'Số dư hiện tại của user #' . $target->id . ' chỉ còn ' . number_format($before) . 'đ, không đủ để trừ ' . number_format($amount) . 'đ.'
+                    );
+                }
+
                 $note = trim((string) $validated['note']);
-                $reference = WalletLedger::makeReference('admin_grant', (int) $target->id);
+                $reference = WalletLedger::makeReference($type, (int) $target->id);
 
                 WalletLedger::ensureOpeningBalance((int) $target->id, $before);
 
@@ -89,8 +111,8 @@ class SuperAdminController extends Controller
 
                 WalletLedger::record(
                     (int) $target->id,
-                    $amount,
-                    'admin_grant',
+                    $signedAmount,
+                    $type,
                     $reference,
                     $note,
                     (int) $admin->id,
@@ -106,11 +128,13 @@ class SuperAdminController extends Controller
                 DB::table('xlogs')->insert([
                     'ip' => $request->ip(),
                     'user' => (int) $admin->id,
-                    'log' => 'Tặng tiền ví user',
+                    'log' => $isDeduct ? 'Trừ tiền ví user' : 'Tặng tiền ví user',
                     'notes' => sprintf(
-                        'Admin #%d tặng %sđ cho user #%d. Trước: %sđ, sau: %sđ. Lý do: %s. Ref: %s',
+                        'Admin #%d %s %sđ %s user #%d. Trước: %sđ, sau: %sđ. Lý do: %s. Ref: %s',
                         $admin->id,
+                        $verb,
                         number_format($amount),
+                        $isDeduct ? 'từ' : 'cho',
                         $target->id,
                         number_format($before),
                         number_format($after),
@@ -121,7 +145,7 @@ class SuperAdminController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                return 'Đã tặng ' . number_format($amount) . 'đ cho user #' . $target->id . '.';
+                return 'Đã ' . $verb . ' ' . number_format($amount) . 'đ ' . ($isDeduct ? 'từ' : 'cho') . ' user #' . $target->id . '.';
             });
         } catch (\RuntimeException $e) {
             return redirect()

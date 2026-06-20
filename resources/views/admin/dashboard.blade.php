@@ -86,7 +86,7 @@
       'users' => ['label' => 'User đã đăng ký', 'hint' => 'Danh sách user, tìm theo ID, tên, email hoặc số điện thoại.'],
       'sessions' => ['label' => 'Đang đăng nhập', 'hint' => 'Session đăng nhập, sắp xếp theo hoạt động mới nhất.'],
       'recharges' => ['label' => 'Lịch sử nạp tiền', 'hint' => 'Giao dịch nạp từ các ngân hàng nhận nạp, mới nhất ở trên cùng.'],
-      'wallet' => ['label' => 'Ví & ledger', 'hint' => 'Tặng tiền có ghi sổ và kiểm tra số dư lệch ledger.'],
+      'wallet' => ['label' => 'Ví & ledger', 'hint' => 'Tặng/trừ tiền có ghi sổ và kiểm tra số dư lệch ledger.'],
       'logs' => ['label' => 'Nhật ký hệ thống', 'hint' => 'Đăng nhập, gia hạn, cấu hình và thao tác vận hành.'],
   ];
   $sectionMeta = $sectionMetaMap[$section] ?? $sectionMetaMap['overview'];
@@ -238,7 +238,7 @@
                 <td>
                   <div class="d-flex flex-wrap gap-2">
                     <a class="btn btn-sm btn-outline-success" href="{{ route('admin.wallet', ['user_id' => $row->id]) }}">
-                      <i class="bx bx-money me-1"></i>Tặng tiền
+                      <i class="bx bx-money me-1"></i>Điều chỉnh ví
                     </a>
                     @if((int) $row->id === (int) auth()->id())
                       <span class="badge bg-label-secondary align-self-center">Đang dùng</span>
@@ -310,7 +310,7 @@
   @if($section === 'wallet')
     @if(!$ledgerStats['available'])
       <div class="alert alert-warning">
-        Bảng <code>wallet_ledgers</code> chưa tồn tại. Hãy chạy migration trước khi tặng tiền hoặc audit ledger.
+        Bảng <code>wallet_ledgers</code> chưa tồn tại. Hãy chạy migration trước khi tặng/trừ tiền hoặc audit ledger.
       </div>
     @else
       @if(($ledgerStats['baseline_created'] ?? 0) > 0)
@@ -362,8 +362,8 @@
         <div class="col-xl-4">
           <div class="card soft-card h-100">
             <div class="card-header">
-              <h5 class="mb-1">Tặng tiền cho user</h5>
-              <div class="text-muted small">Mỗi lần tặng đều khóa số dư, ghi ledger và log admin.</div>
+              <h5 class="mb-1">Điều chỉnh ví user</h5>
+              <div class="text-muted small">Mỗi lần tặng/trừ đều khóa số dư, ghi ledger và log admin.</div>
             </div>
             <div class="card-body">
               <form method="POST" action="{{ route('admin.wallet.grant') }}" class="d-grid gap-3">
@@ -385,6 +385,30 @@
                 </div>
                 <button type="submit" class="btn btn-success" onclick="return confirm('Xác nhận tặng tiền và ghi ledger cho user này?');">
                   <i class="bx bx-plus-circle me-1"></i>Tặng tiền
+                </button>
+              </form>
+
+              <hr class="my-4">
+
+              <form method="POST" action="{{ route('admin.wallet.deduct') }}" class="d-grid gap-3">
+                @csrf
+                <div>
+                  <label class="form-label">ID user</label>
+                  <input class="form-control @error('user_id') is-invalid @enderror" name="user_id" value="{{ old('user_id', request('user_id')) }}" inputmode="numeric" placeholder="Ví dụ: 1001" required>
+                  @error('user_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+                <div>
+                  <label class="form-label">Số tiền trừ</label>
+                  <input class="form-control @error('amount') is-invalid @enderror" name="amount" value="{{ old('amount') }}" inputmode="numeric" placeholder="50000" required>
+                  @error('amount')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+                <div>
+                  <label class="form-label">Lý do</label>
+                  <textarea class="form-control @error('note') is-invalid @enderror" name="note" rows="3" placeholder="Ví dụ: Thu hồi tiền cộng nhầm, xử lý gian lận..." required>{{ old('note') }}</textarea>
+                  @error('note')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Xác nhận trừ tiền và ghi ledger cho user này? Hệ thống sẽ không cho trừ quá số dư hiện tại.');">
+                  <i class="bx bx-minus-circle me-1"></i>Trừ tiền
                 </button>
               </form>
             </div>
@@ -440,7 +464,7 @@
       <div class="card soft-card">
         <div class="card-header">
           <h5 class="mb-1">Lịch sử ledger</h5>
-          <div class="text-muted small">Bút toán mới nhất, gồm nạp tiền, tặng tiền và trừ tiền gói API.</div>
+          <div class="text-muted small">Bút toán mới nhất, gồm nạp tiền, admin tặng/trừ tiền và gói API.</div>
         </div>
         <div class="table-responsive">
           <table class="table table-hover align-middle mb-0">

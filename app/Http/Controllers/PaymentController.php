@@ -12,6 +12,7 @@ use App\Models\AccountAcb;
 use App\Models\AccountVpbank;
 use App\Models\AccountMbbank;
 use App\Models\AccountTechcombank;
+use App\Services\AcbMobileApiClient;
 use App\Support\ApiPackage;
 use App\Support\BankTransactionRecorder;
 use Carbon\Carbon;         // nếu cần dùng xử lý thời gian
@@ -4931,45 +4932,23 @@ class PaymentController extends Controller
     // -------------------------------------------------------------------------
     private function loginAcb($username, $password)
     {
-        $url = "https://apiapp.acb.com.vn/mb/v2/auth/tokens";
-        $header = [
-            'Content-Type: application/json; charset=utf-8',
-            'Host: apiapp.acb.com.vn',
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-        ];
-        $data = [
-            "clientId" => "iuSuHYVufIUuNIREV0FB9EoLn9kHsDbm",
-            "username" => $username,
-            "password" => $password
-        ];
-        $res = $this->callApi($url, $header, json_encode($data), 'POST', false, 20);
-        return json_decode($res, true);
+        return app(AcbMobileApiClient::class)->login((string) $username, (string) $password);
     }
+
     private function getBalanceAcb($token)
     {
-        $url = "https://apiapp.acb.com.vn/mb/legacy/ss/cs/bankservice/transfers/list/account-payment";
-        $header = [
-            'Content-Type: application/json',
-            'Host: apiapp.acb.com.vn',
-            "Authorization: bearer $token"
-        ];
-        $res = $this->callApi($url, $header, null, 'GET', false, 20);
-        return $res;
+        return app(AcbMobileApiClient::class)->balance((string) $token);
     }
-    private function getTransactionHistoryAcb($accountNo, $token, $rows=20)
+
+    private function getTransactionHistoryAcb($accountNo, $token, $rows = 20)
     {
-        $url = "https://apiapp.acb.com.vn/mb/legacy/ss/cs/bankservice/saving/tx-history?maxRows={$rows}&account={$accountNo}";
-        $header = [
-            'Host: apiapp.acb.com.vn',
-            'Accept: application/json, text/plain, */*',
-            'User-Agent: ACB-MBA/2 CFNetwork/1474 Darwin/23.0.0',
-            'Accept-Language: vi',
-            "Authorization: bearer $token",
-            'x-app-version: 3.12.4'
-        ];
-        $res = $this->callApi($url, $header, null, 'GET', false, 20);
-        return $res;
+        return app(AcbMobileApiClient::class)->transactions(
+            (string) $accountNo,
+            (string) $token,
+            (int) $rows
+        );
     }
+
     private function acbReLoginIfNeed(AccountAcb $acc)
     {
         try {

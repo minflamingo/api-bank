@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Bank;
 use App\Models\Invoice;
 use App\Models\User;
+use App\Services\AcbMobileApiClient;
 use App\Support\ApiPackage;
 use App\Support\WalletLedger;
 use Illuminate\Http\JsonResponse;
@@ -1960,32 +1961,12 @@ class PayinController extends Controller
 
     private function loginAcb(string $username, string $password): ?array
     {
-        $url = 'https://apiapp.acb.com.vn/mb/v2/auth/tokens';
-        $headers = [
-            'Content-Type: application/json; charset=utf-8',
-            'Host: apiapp.acb.com.vn',
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        ];
-        $payload = [
-            'clientId' => 'iuSuHYVufIUuNIREV0FB9EoLn9kHsDbm',
-            'username' => $username,
-            'password' => $password,
-        ];
-
-        $response = $this->callApi($url, $headers, json_encode($payload), 'POST', 20);
-        return $response ? json_decode($response, true) : null;
+        return app(AcbMobileApiClient::class)->login($username, $password);
     }
 
     private function findAcbAccountByNumber(string $token, string $accountNumber): ?array
     {
-        $url = 'https://apiapp.acb.com.vn/mb/legacy/ss/cs/bankservice/transfers/list/account-payment';
-        $headers = [
-            'Content-Type: application/json',
-            'Host: apiapp.acb.com.vn',
-            'Authorization: bearer ' . $token,
-        ];
-
-        $response = $this->callApi($url, $headers, null, 'GET', 20);
+        $response = app(AcbMobileApiClient::class)->balance($token);
         $decoded = $response ? json_decode($response, true) : null;
         if (!is_array($decoded) || (int) ($decoded['codeStatus'] ?? 0) !== 200) {
             return null;

@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Invoice;
 use App\Models\Bank;
+use App\Services\AcbMobileApiClient;
 use App\Support\BankTransactionRecorder;
 use App\Support\WalletLedger;
 use Illuminate\Support\Facades\DB;
@@ -592,35 +593,16 @@ class CronController extends Controller
 
     private function loginAcb($username, $password)
     {
-        $url = "https://apiapp.acb.com.vn/mb/v2/auth/tokens";
-        $headers = [
-            'Content-Type: application/json; charset=utf-8',
-            'Host: apiapp.acb.com.vn',
-            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        ];
-        $payload = [
-            'clientId' => 'iuSuHYVufIUuNIREV0FB9EoLn9kHsDbm',
-            'username' => $username,
-            'password' => $password,
-        ];
-
-        $response = $this->callApi($url, $headers, json_encode($payload), 'POST', 20);
-        return $response ? json_decode($response, true) : null;
+        return app(AcbMobileApiClient::class)->login((string) $username, (string) $password);
     }
 
     private function getTransactionHistoryAcb($accountNo, $token, $rows = 20)
     {
-        $url = "https://apiapp.acb.com.vn/mb/legacy/ss/cs/bankservice/saving/tx-history?maxRows={$rows}&account={$accountNo}";
-        $headers = [
-            'Host: apiapp.acb.com.vn',
-            'Accept: application/json, text/plain, */*',
-            'User-Agent: ACB-MBA/2 CFNetwork/1474 Darwin/23.0.0',
-            'Accept-Language: vi',
-            "Authorization: bearer {$token}",
-            'x-app-version: 3.12.4',
-        ];
-
-        return $this->callApi($url, $headers, null, 'GET', 20);
+        return app(AcbMobileApiClient::class)->transactions(
+            (string) $accountNo,
+            (string) $token,
+            (int) $rows
+        );
     }
 
     private function acbReLoginReceiver($account)

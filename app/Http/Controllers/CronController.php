@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Invoice;
 use App\Models\Bank;
 use App\Services\AcbMobileApiClient;
+use App\Support\AcbScanGuard;
 use App\Support\BankTransactionRecorder;
 use App\Support\WalletLedger;
 use Illuminate\Support\Facades\DB;
@@ -44,22 +45,59 @@ class CronController extends Controller
             return "Tài khoản ACB nhận tiền chưa có session hoặc mật khẩu để cron đăng nhập lại";
         }
 
-        $result = $this->getTransactionHistoryAcb($apiAccount->stk, $apiAccount->sessionId, 20);
-        $result = json_decode($result, true);
-
-        if (!isset($result['codeStatus']) || (int) $result['codeStatus'] !== 200) {
-            if (!$this->acbReLoginReceiver($apiAccount)) {
-                return "Không thể đăng nhập lại ACB nhận tiền hệ thống";
-            }
-
-            $apiAccount = DB::table('account_acb')
-                ->where('id', (int) $getbank->receiver_account_id)
-                ->first();
-            $result = $this->getTransactionHistoryAcb($apiAccount->stk, $apiAccount->sessionId, 20);
-            $result = json_decode($result, true);
+        $cooldown = AcbScanGuard::cooldownRemaining((string) $apiAccount->phone);
+        if ($cooldown > 0) {
+            return "ACB đang tạm hoãn {$cooldown} giây sau khi giới hạn tần suất API";
         }
 
-        if(!isset($result['data']) || !is_array($result['data'])){
+        $lock = AcbScanGuard::lock((string) $apiAccount->phone);
+        if (!$lock->get()) {
+            return "ACB đang có một lượt quét khác dùng chung phiên đăng nhập";
+        }
+
+        try {
+            $cooldown = AcbScanGuard::cooldownRemaining((string) $apiAccount->phone);
+            if ($cooldown > 0) {
+                return "ACB đang tạm hoãn {$cooldown} giây sau khi giới hạn tần suất API";
+            }
+
+            $result = $this->getTransactionHistoryAcb($apiAccount->stk, $apiAccount->sessionId, 20);
+            $result = json_decode($result, true);
+
+            if (AcbScanGuard::isRateLimitedPayload($result)) {
+                $delay = AcbScanGuard::beginCooldown((string) $apiAccount->phone);
+                return "ACB giới hạn tần suất API; hệ thống tự tạm hoãn {$delay} giây";
+            }
+
+            if (!isset($result['codeStatus']) || (int) $result['codeStatus'] !== 200) {
+                if (!$this->acbReLoginReceiver($apiAccount)) {
+                    $cooldown = AcbScanGuard::cooldownRemaining((string) $apiAccount->phone);
+                    if ($cooldown > 0) {
+                        return "ACB giới hạn tần suất khi đăng nhập lại; hệ thống tự tạm hoãn {$cooldown} giây";
+                    }
+
+                    return "Không thể đăng nhập lại ACB nhận tiền hệ thống";
+                }
+
+                $apiAccount = DB::table('account_acb')
+                    ->where('id', (int) $getbank->receiver_account_id)
+                    ->first();
+                $result = $this->getTransactionHistoryAcb($apiAccount->stk, $apiAccount->sessionId, 20);
+                $result = json_decode($result, true);
+
+                if (AcbScanGuard::isRateLimitedPayload($result)) {
+                    $delay = AcbScanGuard::beginCooldown((string) $apiAccount->phone);
+                    return "ACB giới hạn tần suất API; hệ thống tự tạm hoãn {$delay} giây";
+                }
+            }
+        } finally {
+            $lock->release();
+        }
+
+        if (!isset($result['codeStatus']) || (int) $result['codeStatus'] !== 200) {
+            return AcbScanGuard::payloadMessage($result, 'Không tìm thấy data ACB');
+        }
+        if (!isset($result['data']) || !is_array($result['data'])) {
             return "Không tìm thấy data ACB";
         }
 
@@ -494,7 +532,10 @@ class CronController extends Controller
     private function storeBankTransactions(string $bank, ?int $accountId, ?int $userId, string $accountNo, array $transactions): void
     {
         try {
-            app(BankTransactionRecorder::class)->save($bank, $accountId, $userId, $accountNo, $transactions);
+            $result = app(BankTransactionRecorder::class)->upsert($bank, $accountId, $userId, $accountNo, $transactions);
+            $dispatcher = app(\App\Services\BankTransactionWebhookDispatcher::class);
+            $dispatcher->dispatchCreatedRows($result['created_rows'] ?? []);
+            $dispatcher->dispatchUpdatedRows($result['updated_rows'] ?? []);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -661,13 +702,15 @@ class CronController extends Controller
 
         try {
             $login = $this->loginAcb($account->phone, $account->password);
+            if (AcbScanGuard::isRateLimitedPayload($login)) {
+                AcbScanGuard::beginCooldown((string) $account->phone);
+                return false;
+            }
             if (isset($login['identity']['active']) && (int) $login['identity']['active'] === 1) {
-                DB::table('account_acb')->where('id', $account->id)->update([
-                    'sessionId' => $login['accessToken'] ?? '',
-                    'time' => time(),
-                ]);
+                $accessToken = (string) ($login['accessToken'] ?? '');
+                AcbScanGuard::syncSession((string) $account->phone, $accessToken);
 
-                return !empty($login['accessToken']);
+                return $accessToken !== '';
             }
         } catch (\Throwable $e) {
             report($e);

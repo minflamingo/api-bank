@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use App\Models\XLog;
 use App\Models\Transaction;
 use App\Models\User;
@@ -14,6 +15,7 @@ use App\Models\AccountMbbank;
 use App\Models\AccountTechcombank;
 use App\Services\AcbMobileApiClient;
 use App\Support\ApiPackage;
+use App\Support\AcbScanGuard;
 use App\Support\BankTransactionRecorder;
 use Carbon\Carbon;         // nếu cần dùng xử lý thời gian
 
@@ -61,6 +63,18 @@ class PaymentController extends Controller
     private function normaliseBankAccountNo($value): string
     {
         return preg_replace('/\s+/', '', trim((string) $value)) ?: '';
+    }
+
+    private function scopedBankApiUrl(string $path, string $accountNo): string
+    {
+        $url = url($path);
+        $accountNo = $this->normaliseBankAccountNo($accountNo);
+
+        if ($accountNo === '') {
+            return $url;
+        }
+
+        return $url . '?' . http_build_query(['account_no' => $accountNo]);
     }
 
     private function acbAccountsFromBalance(string $accessToken, string $fallbackStk, string $fallbackName): array
@@ -563,7 +577,10 @@ class PaymentController extends Controller
     private function storeBankTransactions(string $bank, ?int $accountId, ?int $userId, string $accountNo, array $transactions): void
     {
         try {
-            app(BankTransactionRecorder::class)->save($bank, $accountId, $userId, $accountNo, $transactions);
+            $result = app(BankTransactionRecorder::class)->upsert($bank, $accountId, $userId, $accountNo, $transactions);
+            $dispatcher = app(\App\Services\BankTransactionWebhookDispatcher::class);
+            $dispatcher->dispatchCreatedRows($result['created_rows'] ?? []);
+            $dispatcher->dispatchUpdatedRows($result['updated_rows'] ?? []);
         } catch (\Throwable $e) {
             report($e);
         }
@@ -979,11 +996,13 @@ class PaymentController extends Controller
         }
 
         $tokenVCB = $row->token;
+        $balanceUrl = $this->scopedBankApiUrl("/v2/vcb/balance/{$tokenVCB}", (string) $row->account);
+        $historyUrl = $this->scopedBankApiUrl("/v2/vcb/transhistory/{$tokenVCB}", (string) $row->account);
         // Gửi mail tuỳ ý, ví dụ
 
         return response()->json([
             'status'=>'2',
-            'msg'=>"Token VCB: {$tokenVCB}\nAPI số dư: " . url("/v2/vcb/balance/{$tokenVCB}") . "\nAPI giao dịch: " . url("/v2/vcb/transhistory/{$tokenVCB}")
+            'msg'=>"Token VCB: {$tokenVCB}\nAPI số dư: {$balanceUrl}\nAPI giao dịch: {$historyUrl}"
         ]);
     }
 
@@ -1806,10 +1825,12 @@ class PaymentController extends Controller
         }
 
         $token = $acc->token;
+        $balanceUrl = $this->scopedBankApiUrl("/v2/vpbank/balance/{$token}", (string) $acc->account);
+        $historyUrl = $this->scopedBankApiUrl("/v2/vpbank/transhistory/{$token}", (string) $acc->account);
 
         return response()->json([
             'status' => '2',
-            'msg' => "Token VPBank: {$token}\nAPI số dư: " . url("/v2/vpbank/balance/{$token}") . "\nAPI giao dịch: " . url("/v2/vpbank/transhistory/{$token}")
+            'msg' => "Token VPBank: {$token}\nAPI số dư: {$balanceUrl}\nAPI giao dịch: {$historyUrl}"
         ]);
     }
 
@@ -2223,8 +2244,25 @@ class PaymentController extends Controller
             (string) $acc->cookie
         );
 
+        $status = (int) ($response['status'] ?? 0);
         $body = json_decode((string) ($response['body'] ?? ''), true);
+        if ($status === 403) {
+            return [
+                'success' => false,
+                'code' => 403,
+                'message' => 'VPBank đang từ chối request từ máy chủ (HTTP 403). Hệ thống sẽ thử lại sau; nếu kéo dài cần dùng proxy/browser sạch cho VPBank.',
+            ];
+        }
+
         if (!is_array($body)) {
+            if ($status >= 400) {
+                return [
+                    'success' => false,
+                    'code' => $status,
+                    'message' => 'VPBank trả HTTP ' . $status . ' khi lấy danh sách tài khoản',
+                ];
+            }
+
             return ['success' => false, 'code' => 503, 'message' => 'Không đọc được danh sách tài khoản VPBank'];
         }
 
@@ -2897,10 +2935,12 @@ class PaymentController extends Controller
         }
 
         $token = $acc->token;
+        $balanceUrl = $this->scopedBankApiUrl("/v2/mbbank/balance/{$token}", (string) $acc->account);
+        $historyUrl = $this->scopedBankApiUrl("/v2/mbbank/transhistory/{$token}", (string) $acc->account);
 
         return response()->json([
             'status' => '2',
-            'msg' => "Token MBBank: {$token}\nAPI số dư: " . url("/v2/mbbank/balance/{$token}") . "\nAPI giao dịch: " . url("/v2/mbbank/transhistory/{$token}"),
+            'msg' => "Token MBBank: {$token}\nAPI số dư: {$balanceUrl}\nAPI giao dịch: {$historyUrl}",
         ]);
     }
 
@@ -3448,8 +3488,8 @@ class PaymentController extends Controller
         $password = (string) $request->input('password', '');
         $stk = trim((string) $request->input('stk'));
 
-        if ($account === '' || $password === '' || $stk === '') {
-            return response()->json(['status' => '1', 'msg' => 'Vui lòng nhập đủ tài khoản đăng nhập, mật khẩu và số tài khoản Techcombank']);
+        if ($account === '' || $stk === '') {
+            return response()->json(['status' => '1', 'msg' => 'Vui lòng nhập đủ tài khoản đăng nhập và số tài khoản Techcombank']);
         }
 
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
@@ -3463,7 +3503,7 @@ class PaymentController extends Controller
             ]);
         }
 
-        $login = $this->techcombankLoginRequest($account, $password);
+        $login = $this->techcombankManualLoginRequest();
         if (empty($login['success'])) {
             return response()->json([
                 'status' => '1',
@@ -3483,8 +3523,8 @@ class PaymentController extends Controller
                 'auth_token' => null,
                 'refresh_token' => null,
                 'arrangement_id' => null,
-                'cookie' => (string) ($login['cookie'] ?? ''),
-                'login_url' => (string) ($login['login_url'] ?? ''),
+                'cookie' => '',
+                'login_url' => (string) ($login['auth_url'] ?? ''),
                 'code_verifier' => (string) ($login['code_verifier'] ?? ''),
                 'code_challenge' => (string) ($login['code_challenge'] ?? ''),
                 'state' => (string) ($login['state'] ?? ''),
@@ -3498,8 +3538,9 @@ class PaymentController extends Controller
 
         return response()->json([
             'status' => '2',
-            'msg' => 'Techcombank đã gửi yêu cầu xác nhận tới app Mobile. Hãy mở app, duyệt đăng nhập rồi bấm hoàn tất.',
-            'manual_login' => false,
+            'msg' => 'Đã tạo link đăng nhập Techcombank. Hãy mở link, đăng nhập và duyệt trên app Mobile, sau đó dán URL sau xác nhận về hệ thống.',
+            'manual_login' => true,
+            'auth_url' => (string) ($login['auth_url'] ?? ''),
         ]);
     }
 
@@ -3648,10 +3689,12 @@ class PaymentController extends Controller
         }
 
         $token = $acc->token;
+        $balanceUrl = $this->scopedBankApiUrl("/v2/techcombank/balance/{$token}", (string) $acc->account);
+        $historyUrl = $this->scopedBankApiUrl("/v2/techcombank/transhistory/{$token}", (string) $acc->account);
 
         return response()->json([
             'status' => '2',
-            'msg' => "Token Techcombank: {$token}\nAPI số dư: " . url("/v2/techcombank/balance/{$token}") . "\nAPI giao dịch: " . url("/v2/techcombank/transhistory/{$token}"),
+            'msg' => "Token Techcombank: {$token}\nAPI số dư: {$balanceUrl}\nAPI giao dịch: {$historyUrl}",
         ]);
     }
 
@@ -4790,11 +4833,13 @@ class PaymentController extends Controller
         }
 
         $tokenAcb = $acc->token;
+        $balanceUrl = $this->scopedBankApiUrl("/v2/acb/balance/{$tokenAcb}", (string) $acc->stk);
+        $historyUrl = $this->scopedBankApiUrl("/v2/acb/transhistory/{$tokenAcb}", (string) $acc->stk);
         // Gửi mail...
 
         return response()->json([
             'status'=>'2',
-            'msg'=>"Token ACB: {$tokenAcb}\nAPI số dư: " . url("/v2/acb/balance/{$tokenAcb}") . "\nAPI giao dịch: " . url("/v2/acb/transhistory/{$tokenAcb}")
+            'msg'=>"Token ACB: {$tokenAcb}\nAPI số dư: {$balanceUrl}\nAPI giao dịch: {$historyUrl}"
         ]);
     }
 
@@ -4933,32 +4978,156 @@ class PaymentController extends Controller
             return ['ok' => false, 'message' => 'Không tìm thấy tài khoản ACB'];
         }
 
-        $history = json_decode((string) $this->getTransactionHistoryAcb($acc->stk, $acc->sessionId, $limit), true);
-        if ((int) ($history['codeStatus'] ?? 0) !== 200 && $this->acbReLoginIfNeed($acc)) {
-            $history = json_decode((string) $this->getTransactionHistoryAcb($acc->stk, $acc->refresh()->sessionId, $limit), true);
-        }
-        if ((int) ($history['codeStatus'] ?? 0) !== 200) {
-            return ['ok' => false, 'session_expired' => true, 'message' => (string) ($history['message'] ?? 'Phiên ACB hết hạn')];
+        $cooldown = AcbScanGuard::cooldownRemaining((string) $acc->phone);
+        if ($cooldown > 0) {
+            return $this->acbDeferredSnapshot($cooldown, 'ACB đang tạm hoãn sau khi giới hạn tần suất API.', true);
         }
 
-        $balancePayload = json_decode((string) $this->getBalanceAcb($acc->refresh()->sessionId), true);
-        $balance = 0;
-        $accountName = (string) ($acc->name ?? '');
-        foreach (($balancePayload['data'] ?? []) as $item) {
-            if ((string) ($item['accountNumber'] ?? '') === (string) $acc->stk) {
-                $balance = (int) str_replace(',', '', (string) ($item['balance'] ?? 0));
-                $accountName = (string) ($item['accountDescription'] ?? $accountName);
-                break;
-            }
+        $lock = AcbScanGuard::lock((string) $acc->phone);
+        if (!$lock->get()) {
+            return $this->acbDeferredSnapshot(15, 'ACB đang có một lượt quét khác dùng chung phiên đăng nhập.');
         }
+
+        try {
+            $cooldown = AcbScanGuard::cooldownRemaining((string) $acc->phone);
+            if ($cooldown > 0) {
+                return $this->acbDeferredSnapshot($cooldown, 'ACB đang tạm hoãn sau khi giới hạn tần suất API.', true);
+            }
+
+            $history = json_decode((string) $this->getTransactionHistoryAcb($acc->stk, $acc->sessionId, $limit), true);
+            if (AcbScanGuard::isRateLimitedPayload($history)) {
+                return $this->acbRateLimitedSnapshot($acc, $history);
+            }
+
+            if ((int) ($history['codeStatus'] ?? 0) !== 200 && $this->acbReLoginIfNeed($acc)) {
+                $acc = $acc->refresh();
+                $history = json_decode((string) $this->getTransactionHistoryAcb($acc->stk, $acc->sessionId, $limit), true);
+            }
+            if (AcbScanGuard::isRateLimitedPayload($history)) {
+                return $this->acbRateLimitedSnapshot($acc, $history);
+            }
+            if ((int) ($history['codeStatus'] ?? 0) !== 200) {
+                $cooldown = AcbScanGuard::cooldownRemaining((string) $acc->phone);
+                if ($cooldown > 0) {
+                    return $this->acbDeferredSnapshot($cooldown, 'ACB giới hạn tần suất khi đăng nhập lại.', true);
+                }
+
+                return [
+                    'ok' => false,
+                    'session_expired' => true,
+                    'message' => AcbScanGuard::payloadMessage($history, 'Phiên ACB hết hạn'),
+                ];
+            }
+
+            $acc = $acc->refresh();
+            $balancePayload = json_decode((string) $this->getBalanceAcb($acc->sessionId), true);
+            $balance = (int) ($acc->last_balance ?? 0);
+            $accountName = (string) ($acc->name ?? '');
+            $nextScanAfter = null;
+
+            if (AcbScanGuard::isRateLimitedPayload($balancePayload)) {
+                $nextScanAfter = AcbScanGuard::beginCooldown((string) $acc->phone);
+            } else {
+                foreach (($balancePayload['data'] ?? []) as $item) {
+                    if ((string) ($item['accountNumber'] ?? '') === (string) $acc->stk) {
+                        $balance = (int) str_replace(',', '', (string) ($item['balance'] ?? 0));
+                        $accountName = (string) ($item['accountDescription'] ?? $accountName);
+                        break;
+                    }
+                }
+            }
+
+            return [
+                'ok' => true,
+                'transactions' => is_array($history['data'] ?? null) ? $history['data'] : [],
+                'balance' => $balance,
+                'account_name' => $accountName,
+                'raw' => $history,
+                'next_scan_after' => $nextScanAfter,
+            ];
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function acbRateLimitedSnapshot(AccountAcb $acc, ?array $payload): array
+    {
+        $delay = AcbScanGuard::beginCooldown((string) $acc->phone);
 
         return [
-            'ok' => true,
-            'transactions' => is_array($history['data'] ?? null) ? $history['data'] : [],
-            'balance' => $balance,
-            'account_name' => $accountName,
-            'raw' => $history,
+            'ok' => false,
+            'rate_limited' => true,
+            'deferred' => true,
+            'next_scan_after' => $delay,
+            'message' => AcbScanGuard::payloadMessage($payload, 'ACB giới hạn tần suất API; hệ thống tự tạm hoãn.'),
         ];
+    }
+
+    private function acbDeferredSnapshot(int $delay, string $message, bool $rateLimited = false): array
+    {
+        return [
+            'ok' => false,
+            'rate_limited' => $rateLimited,
+            'deferred' => true,
+            'next_scan_after' => max(15, $delay),
+            'message' => $message,
+        ];
+    }
+
+    private function vpbankTransactionRateLimitMessage(string $message): bool
+    {
+        $lower = mb_strtolower($message, 'UTF-8');
+
+        return str_contains($message, '2025041801')
+            || str_contains($lower, 'vượt quá số lượng truy vấn giao dịch')
+            || str_contains($lower, 'vuot qua so luong truy van giao dich')
+            || str_contains($lower, 'quá số lượng truy vấn giao dịch');
+    }
+
+    private function vpbankTransactionScanDelay(AccountVpbank $acc): int
+    {
+        $query = AccountVpbank::where('username', (string) $acc->username)
+            ->where('is_active', true);
+
+        if ($acc->user_id === null) {
+            $query->whereNull('user_id');
+        } else {
+            $query->where('user_id', $acc->user_id);
+        }
+
+        $activeCount = max(1, (int) $query->count());
+
+        return min(21600, max(3600, $activeCount * 3600));
+    }
+
+    private function vpbankHistoryCooldownKey(AccountVpbank $acc): string
+    {
+        $owner = $acc->user_id === null ? 'system' : (string) $acc->user_id;
+
+        return 'vpbank:history-next:' . $owner . ':' . md5((string) $acc->username . '|' . (string) $acc->account);
+    }
+
+    private function vpbankHistoryCooldownRemaining(AccountVpbank $acc): int
+    {
+        $nextAt = Cache::get($this->vpbankHistoryCooldownKey($acc));
+        if (!$nextAt) {
+            return 0;
+        }
+
+        try {
+            return max(0, (int) now()->diffInSeconds(Carbon::parse((string) $nextAt), false));
+        } catch (\Throwable) {
+            return 0;
+        }
+    }
+
+    private function vpbankSetHistoryCooldown(AccountVpbank $acc, ?int $delaySeconds = null): int
+    {
+        $delaySeconds = $delaySeconds ?: $this->vpbankTransactionScanDelay($acc);
+        $nextAt = now()->addSeconds($delaySeconds);
+        Cache::put($this->vpbankHistoryCooldownKey($acc), $nextAt->toDateTimeString(), $nextAt);
+
+        return $delaySeconds;
     }
 
     private function internalVpbankSnapshotForScanner(int $accountId, int $limit): array
@@ -4968,10 +5137,88 @@ class PaymentController extends Controller
             return ['ok' => false, 'message' => 'Không tìm thấy tài khoản VPBank'];
         }
 
+        $balance = $this->getBalanceVpbank($acc);
+        if ((int) ($balance['code'] ?? 0) !== 200) {
+            $message = (string) ($balance['message'] ?? 'Không lấy được số dư VPBank');
+            if ((int) ($balance['code'] ?? 0) === 403) {
+                return [
+                    'ok' => false,
+                    'next_scan_after' => 3600,
+                    'message' => $message,
+                ];
+            }
+
+            $sessionExpired = $this->vpbankLooksLikeSessionExpired((int) ($balance['code'] ?? 0), $message);
+
+            if ($sessionExpired) {
+                $reLogin = $this->vpbankReLoginAttempt($acc);
+                if (!empty($reLogin['success'])) {
+                    $balance = $this->getBalanceVpbank($acc->refresh());
+                } elseif (!empty($reLogin['requires_reauth'])) {
+                    return [
+                        'ok' => false,
+                        'session_expired' => true,
+                        'requires_reauth' => true,
+                        'message' => (string) ($reLogin['message'] ?? 'VPBank cần xác thực lại trên app/OTP'),
+                    ];
+                } elseif (!empty($reLogin['credential_error'])) {
+                    return [
+                        'ok' => false,
+                        'credential_error' => true,
+                        'message' => (string) ($reLogin['message'] ?? 'Tài khoản hoặc mật khẩu VPBank không đúng'),
+                    ];
+                }
+            }
+        }
+
+        if ((int) ($balance['code'] ?? 0) !== 200) {
+            $message = (string) ($balance['message'] ?? 'Không lấy được số dư VPBank');
+
+            return [
+                'ok' => false,
+                'session_expired' => $this->vpbankLooksLikeSessionExpired((int) ($balance['code'] ?? 0), $message),
+                'message' => $message,
+            ];
+        }
+
+        $acc = $acc->refresh();
+        if ($this->vpbankHistoryCooldownRemaining($acc) > 0) {
+            return [
+                'ok' => true,
+                'transactions' => [],
+                'balance' => (int) ($balance['data']['balance'] ?? 0),
+                'account_name' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
+                'raw' => $balance,
+                'history_deferred' => true,
+                'next_scan_after' => 60,
+            ];
+        }
+
         $history = $this->getTransactionHistoryVpbank($acc, null, null);
         if ((int) ($history['code'] ?? 0) !== 200) {
+            $message = (string) ($history['message'] ?? 'Không quét được VPBank');
+            if ($this->vpbankTransactionRateLimitMessage($message)) {
+                $this->vpbankSetHistoryCooldown($acc);
+
+                return [
+                    'ok' => true,
+                    'transactions' => [],
+                    'balance' => (int) ($balance['data']['balance'] ?? 0),
+                    'account_name' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
+                    'raw' => $history,
+                    'rate_limited' => true,
+                    'next_scan_after' => 60,
+                    'message' => $message,
+                ];
+            }
+
             $reLogin = $this->vpbankReLoginAttempt($acc);
             if (!empty($reLogin['success'])) {
+                $acc = $acc->refresh();
+                $freshBalance = $this->getBalanceVpbank($acc);
+                if ((int) ($freshBalance['code'] ?? 0) === 200) {
+                    $balance = $freshBalance;
+                }
                 $history = $this->getTransactionHistoryVpbank($acc->refresh(), null, null);
             } elseif (!empty($reLogin['requires_reauth'])) {
                 return [
@@ -4990,6 +5237,21 @@ class PaymentController extends Controller
         }
         if ((int) ($history['code'] ?? 0) !== 200) {
             $message = (string) ($history['message'] ?? 'Không quét được VPBank');
+            if ($this->vpbankTransactionRateLimitMessage($message)) {
+                $this->vpbankSetHistoryCooldown($acc);
+
+                return [
+                    'ok' => true,
+                    'transactions' => [],
+                    'balance' => (int) ($balance['data']['balance'] ?? 0),
+                    'account_name' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
+                    'raw' => $history,
+                    'rate_limited' => true,
+                    'next_scan_after' => 60,
+                    'message' => $message,
+                ];
+            }
+
             $sessionExpired = $this->vpbankLooksLikeSessionExpired((int) ($history['code'] ?? 0), $message);
 
             return [
@@ -4999,7 +5261,7 @@ class PaymentController extends Controller
             ];
         }
 
-        $balance = $this->getBalanceVpbank($acc->refresh());
+        $this->vpbankSetHistoryCooldown($acc);
 
         return [
             'ok' => true,
@@ -5007,6 +5269,7 @@ class PaymentController extends Controller
             'balance' => (int) ($balance['data']['balance'] ?? 0),
             'account_name' => (string) ($balance['data']['account_name'] ?? $acc->name ?? ''),
             'raw' => $history,
+            'next_scan_after' => 60,
         ];
     }
 
@@ -5102,14 +5365,18 @@ class PaymentController extends Controller
     {
         try {
             $login = $this->loginAcb($acc->phone, $acc->password);
+            if (AcbScanGuard::isRateLimitedPayload($login)) {
+                AcbScanGuard::beginCooldown((string) $acc->phone);
+                return false;
+            }
             if (isset($login['identity']['active']) && $login['identity']['active'] == 1) {
-                $acc->sessionId = $login['accessToken'] ?? '';
-                $acc->time      = time();
-                $acc->save();
-                return true;
+                $accessToken = (string) ($login['accessToken'] ?? '');
+                AcbScanGuard::syncSession((string) $acc->phone, $accessToken);
+                return $accessToken !== '';
             }
             return false;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            report($e);
             return false;
         }
     }

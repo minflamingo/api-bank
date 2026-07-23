@@ -67,12 +67,19 @@ class BankRealtimeScannerService
         $snapshot = app(PaymentController::class)->internalBankSnapshotForScanner($bank, (int) $model->id, $limit);
         if (empty($snapshot['ok'])) {
             $message = (string) ($snapshot['message'] ?? 'Không quét được ' . strtoupper($bank));
+            if (!empty($snapshot['deferred']) || !empty($snapshot['rate_limited'])) {
+                $this->deferAccount($model, $message, (int) ($snapshot['next_scan_after'] ?? 90));
+
+                return ['scanned' => 1, 'created' => 0, 'updated' => 0, 'failed' => 0, 'events' => 0];
+            }
+
             $forceStop = !empty($snapshot['credential_error']) || !empty($snapshot['requires_reauth']);
+            $failureDelay = (int) ($snapshot['next_scan_after'] ?? (!empty($snapshot['session_expired']) ? 300 : 90));
             $paused = $this->markAccount(
                 $model,
                 false,
                 $message,
-                !empty($snapshot['session_expired']) ? 300 : 90,
+                $failureDelay,
                 forceStop: $forceStop
             );
             $events = 0;
@@ -92,7 +99,8 @@ class BankRealtimeScannerService
 
         $previousBalance = $this->readModelInt($model, 'last_balance');
         $balance = (int) ($snapshot['balance'] ?? $previousBalance);
-        $this->markAccount($model, true, null, $this->scanInterval($model), $balance, (string) ($snapshot['account_name'] ?? ''));
+        $nextScanAfter = (int) ($snapshot['next_scan_after'] ?? $this->scanInterval($model));
+        $this->markAccount($model, true, null, $nextScanAfter, $balance, (string) ($snapshot['account_name'] ?? ''));
 
         $fresh = $model->fresh() ?: $model;
         $freshAccount = $this->cache->accountArray($bank, $fresh);
@@ -186,7 +194,7 @@ class BankRealtimeScannerService
         $paused = false;
         $this->setIfColumn($updates, $table, 'last_scan_status', $ok ? 'ok' : 'error');
         $this->setIfColumn($updates, $table, 'last_scan_error', $error);
-        $this->setIfColumn($updates, $table, 'next_scan_at', now()->addSeconds(max(15, $delaySeconds))->toDateTimeString());
+        $this->setIfColumn($updates, $table, 'next_scan_at', now()->addSeconds($this->normalizeScanDelay($model, $delaySeconds))->toDateTimeString());
 
         if ($ok) {
             $this->setIfColumn($updates, $table, 'last_synced_at', now()->toDateTimeString());
@@ -232,6 +240,25 @@ class BankRealtimeScannerService
         }
 
         return $paused;
+    }
+
+    private function deferAccount(Model $model, string $message, int $delaySeconds): void
+    {
+        $table = $model->getTable();
+        $updates = [];
+        $this->setIfColumn($updates, $table, 'last_scan_status', 'waiting');
+        $this->setIfColumn($updates, $table, 'last_scan_error', mb_substr($message, 0, 500));
+        $this->setIfColumn($updates, $table, 'scan_failed_count', 0);
+        $this->setIfColumn(
+            $updates,
+            $table,
+            'next_scan_at',
+            now()->addSeconds($this->normalizeScanDelay($model, $delaySeconds))->toDateTimeString()
+        );
+
+        if ($updates) {
+            DB::table($table)->where('id', (int) $model->id)->update($updates);
+        }
     }
 
     private function accountPayload(array $account): array
@@ -280,7 +307,14 @@ class BankRealtimeScannerService
     {
         $value = (int) ($model->scan_interval_seconds ?? 60);
 
-        return max(15, min(900, $value > 0 ? $value : 60));
+        return $this->normalizeScanDelay($model, $value);
+    }
+
+    private function normalizeScanDelay(Model $model, int $seconds): int
+    {
+        $min = $model->getTable() === 'account_acb' ? 60 : 15;
+
+        return max($min, min(900, $seconds > 0 ? $seconds : 60));
     }
 
     private function isCredentialFailure(?string $message): bool

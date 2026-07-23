@@ -21,6 +21,11 @@ class BankRealtimeCacheService
 
     public function transactionHistory(string $bank, string $token, int $limit = 100, string $accountNo = ''): array
     {
+        $accountChoices = $this->accountNumberChoices($bank, $token, $accountNo);
+        if (count($accountChoices) > 1) {
+            return $this->accountNoRequiredResponse($bank, $accountChoices);
+        }
+
         $account = $this->findAccount($bank, $token, $accountNo);
         if (!$account) {
             return $this->accountNotFoundResponse($bank, $token);
@@ -59,6 +64,11 @@ class BankRealtimeCacheService
 
     public function balance(string $bank, string $token, string $accountNo = ''): array
     {
+        $accountChoices = $this->accountNumberChoices($bank, $token, $accountNo);
+        if (count($accountChoices) > 1) {
+            return $this->accountNoRequiredResponse($bank, $accountChoices);
+        }
+
         $account = $this->findAccount($bank, $token, $accountNo);
         if (!$account) {
             return $this->accountNotFoundResponse($bank, $token);
@@ -146,6 +156,53 @@ class BankRealtimeCacheService
             ->first();
 
         return $model ? $this->accountArray($bank, $model) : null;
+    }
+
+    private function accountNumberChoices(string $bank, string $token, string $accountNo = ''): array
+    {
+        $bank = $this->normalizeBank($bank);
+        $token = trim($token);
+        if ($bank === null || $token === '' || $this->normalizeAccountNo($accountNo) !== '') {
+            return [];
+        }
+
+        $query = match ($bank) {
+            'acb' => AccountAcb::query()->where('token', $token),
+            'vcb' => AccountVietcombank::query()->where('token', $token),
+            'vpbank' => AccountVpbank::query()->where('token', $token),
+            'techcombank' => AccountTechcombank::query()->where('token', $token),
+            'mbbank' => AccountMbbank::query()->where('token', $token),
+        };
+
+        $choices = [];
+        $rows = $this->withoutArchived($query)
+            ->orderByRaw('CASE WHEN user_id IS NULL THEN 1 ELSE 0 END')
+            ->orderByDesc('id')
+            ->limit(25)
+            ->get();
+
+        foreach ($rows as $model) {
+            $account = $this->accountArray($bank, $model);
+            $number = $this->normalizeAccountNo((string) ($account['account_no'] ?? ''));
+            if ($number !== '') {
+                $choices[$number] = $number;
+            }
+        }
+
+        return array_values($choices);
+    }
+
+    private function accountNoRequiredResponse(string $bank, array $accountNumbers): array
+    {
+        return $this->errorResponse(
+            $bank,
+            'Token này đang dùng cho nhiều tài khoản. Vui lòng truyền account_no để lấy đúng số dư/lịch sử từng tài khoản.',
+            'ACCOUNT_NO_REQUIRED',
+            [
+                'account_numbers' => array_values($accountNumbers),
+                'hint' => 'Thêm ?account_no=SO_TAI_KHOAN vào cuối URL API.',
+            ]
+        );
     }
 
     private function normalizeAccountNo(string $accountNo): string

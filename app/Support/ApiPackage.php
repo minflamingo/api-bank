@@ -16,35 +16,35 @@ class ApiPackage
         return [
             'standard' => [
                 'name' => 'Standard',
-                'price' => 20000,
+                'price' => 24000,
                 'limit' => 1,
                 'summary' => '1 tài khoản ngân hàng',
                 'features' => ['Thông tin số dư', 'Lịch sử giao dịch', 'API', 'Webhook'],
-                'durations' => self::discountDurations(20000),
+                'durations' => self::discountDurations(24000),
             ],
             'plus' => [
                 'name' => 'Plus',
-                'price' => 40000,
+                'price' => 48000,
                 'limit' => 2,
                 'summary' => '2 tài khoản ngân hàng',
                 'features' => ['Thông tin số dư', 'Lịch sử giao dịch', 'API', 'Webhook'],
-                'durations' => self::discountDurations(40000),
+                'durations' => self::discountDurations(48000),
             ],
             'pro' => [
                 'name' => 'Pro',
-                'price' => 90000,
+                'price' => 108000,
                 'limit' => 5,
                 'summary' => '5 tài khoản ngân hàng',
                 'features' => ['Thông tin số dư', 'Lịch sử giao dịch', 'API', 'Webhook'],
-                'durations' => self::discountDurations(90000),
+                'durations' => self::discountDurations(108000),
             ],
             'business' => [
                 'name' => 'Business',
-                'price' => 1000000,
+                'price' => 1200000,
                 'limit' => 200,
                 'summary' => '200 tài khoản ngân hàng',
                 'features' => ['Thông tin số dư', 'Lịch sử giao dịch', 'API', 'Webhook', 'Website riêng'],
-                'durations' => self::discountDurations(1000000),
+                'durations' => self::discountDurations(1200000),
             ],
         ];
     }

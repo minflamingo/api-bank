@@ -19,9 +19,9 @@ class BankRealtimeCacheService
 {
     private const BANKS = ['acb', 'vcb', 'vpbank', 'techcombank', 'mbbank'];
 
-    public function transactionHistory(string $bank, string $token, int $limit = 100): array
+    public function transactionHistory(string $bank, string $token, int $limit = 100, string $accountNo = ''): array
     {
-        $account = $this->findAccount($bank, $token);
+        $account = $this->findAccount($bank, $token, $accountNo);
         if (!$account) {
             return $this->accountNotFoundResponse($bank, $token);
         }
@@ -38,8 +38,9 @@ class BankRealtimeCacheService
 
         $limit = max(1, min(500, $limit));
         $tokenHash = $this->tokenHash($token);
-        $listKey = "tx:list:{$tokenHash}:{$limit}";
-        $metaKey = "tx:meta:{$tokenHash}";
+        $accountKey = $this->cacheAccountKey((string) $account['account_no']);
+        $listKey = "tx:list:{$tokenHash}:{$accountKey}:{$limit}";
+        $metaKey = "tx:meta:{$tokenHash}:{$accountKey}";
 
         $rows = $this->cacheGet($listKey);
         $meta = $this->cacheGet($metaKey) ?: [];
@@ -56,9 +57,9 @@ class BankRealtimeCacheService
         return $this->historyEnvelope($bank, $rows, $meta, $source);
     }
 
-    public function balance(string $bank, string $token): array
+    public function balance(string $bank, string $token, string $accountNo = ''): array
     {
-        $account = $this->findAccount($bank, $token);
+        $account = $this->findAccount($bank, $token, $accountNo);
         if (!$account) {
             return $this->accountNotFoundResponse($bank, $token);
         }
@@ -74,7 +75,8 @@ class BankRealtimeCacheService
         }
 
         $tokenHash = $this->tokenHash($token);
-        $key = "balance:{$tokenHash}";
+        $accountKey = $this->cacheAccountKey((string) $account['account_no']);
+        $key = "balance:{$tokenHash}:{$accountKey}";
         $payload = $this->cacheGet($key);
         $source = 'redis';
 
@@ -111,12 +113,13 @@ class BankRealtimeCacheService
 
         $tokenHash = $this->tokenHash($token);
         $limit = max(1, min(500, $limit));
-        $this->cachePut("tx:list:{$tokenHash}:{$limit}", $this->sqlTransactions($account, $limit), 60);
-        $this->cachePut("tx:meta:{$tokenHash}", $this->metaForAccount($account), 60);
-        $this->cachePut("balance:{$tokenHash}", $this->balanceSnapshotFromAccount($account), 60);
+        $accountKey = $this->cacheAccountKey((string) $account['account_no']);
+        $this->cachePut("tx:list:{$tokenHash}:{$accountKey}:{$limit}", $this->sqlTransactions($account, $limit), 60);
+        $this->cachePut("tx:meta:{$tokenHash}:{$accountKey}", $this->metaForAccount($account), 60);
+        $this->cachePut("balance:{$tokenHash}:{$accountKey}", $this->balanceSnapshotFromAccount($account), 60);
     }
 
-    public function findAccount(string $bank, string $token): ?array
+    public function findAccount(string $bank, string $token, string $accountNo = ''): ?array
     {
         $bank = $this->normalizeBank($bank);
         $token = trim($token);
@@ -124,15 +127,35 @@ class BankRealtimeCacheService
             return null;
         }
 
-        $model = match ($bank) {
-            'acb' => AccountAcb::query()->where('token', $token)->first(),
-            'vcb' => AccountVietcombank::query()->where('token', $token)->first(),
-            'vpbank' => AccountVpbank::query()->where('token', $token)->first(),
-            'techcombank' => AccountTechcombank::query()->where('token', $token)->first(),
-            'mbbank' => AccountMbbank::query()->where('token', $token)->first(),
+        $accountNo = $this->normalizeAccountNo($accountNo);
+        $query = match ($bank) {
+            'acb' => AccountAcb::query()->where('token', $token),
+            'vcb' => AccountVietcombank::query()->where('token', $token),
+            'vpbank' => AccountVpbank::query()->where('token', $token),
+            'techcombank' => AccountTechcombank::query()->where('token', $token),
+            'mbbank' => AccountMbbank::query()->where('token', $token),
         };
 
+        if ($accountNo !== '') {
+            $query->where($bank === 'acb' ? 'stk' : 'account', $accountNo);
+        }
+
+        $model = $this->withoutArchived($query)
+            ->orderByRaw('CASE WHEN user_id IS NULL THEN 1 ELSE 0 END')
+            ->orderByDesc('id')
+            ->first();
+
         return $model ? $this->accountArray($bank, $model) : null;
+    }
+
+    private function normalizeAccountNo(string $accountNo): string
+    {
+        return preg_replace('/\s+/', '', trim($accountNo)) ?: '';
+    }
+
+    private function cacheAccountKey(string $accountNo): string
+    {
+        return hash('sha256', $this->normalizeAccountNo($accountNo));
     }
 
     public function accountArray(string $bank, Model $model): array
@@ -203,7 +226,7 @@ class BankRealtimeCacheService
                 'mbbank' => AccountMbbank::query(),
             };
 
-            if ($query->where('token', $token)->exists()) {
+            if ($this->withoutArchived($query)->where('token', $token)->exists()) {
                 return $bank;
             }
         }
@@ -243,7 +266,7 @@ class BankRealtimeCacheService
         }
 
         $fresh = ApiPackage::applyDueScheduledPlan($user) ?: $user;
-        if ((int) ($fresh->time_end ?? 0) > time()) {
+        if (! ApiPackage::isExpired($fresh)) {
             return null;
         }
 
@@ -285,13 +308,6 @@ class BankRealtimeCacheService
                 }
             })
             ->where('account_no', (string) $account['account_no']);
-
-        if ((int) ($account['id'] ?? 0) > 0) {
-            $query->where(function ($query) use ($account) {
-                $query->where('account_id', (int) $account['id'])
-                    ->orWhereNull('account_id');
-            });
-        }
 
         $rows = $query
             ->orderByDesc(DB::raw('COALESCE(happened_at, posted_at, created_at)'))
@@ -425,6 +441,19 @@ class BankRealtimeCacheService
             'transactions' => [],
             'data' => $this->normalizeBank($bank) === 'acb' ? [] : ['transactions' => []],
         ], $extra);
+    }
+
+    private function withoutArchived($query)
+    {
+        $table = $query->getModel()->getTable();
+        if (Schema::hasColumn($table, 'is_deleted')) {
+            $query->where(function ($subQuery) use ($table) {
+                $subQuery->whereNull($table . '.is_deleted')
+                    ->orWhere($table . '.is_deleted', 0);
+            });
+        }
+
+        return $query;
     }
 
     private function bankLabel(?string $bank): string

@@ -11,6 +11,7 @@ use App\Models\AccountVpbank;
 use App\Models\User;
 use App\Support\ApiPackage;
 use App\Support\BankTransactionRecorder;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -57,7 +58,7 @@ class BankRealtimeScannerService
 
         $user = ApiPackage::applyDueScheduledPlan($user) ?: $user;
         $userId = (int) $user->id;
-        if ((int) ($user->time_end ?? 0) <= time()) {
+        if (ApiPackage::isExpired($user)) {
             $this->markAccount($model, false, 'API package expired', 600, trackFailure: false);
             ApiPackage::pauseBankAccountsForExpiredPackage($user);
             return ['scanned' => 0, 'created' => 0, 'updated' => 0, 'failed' => 0, 'events' => 0];
@@ -99,12 +100,20 @@ class BankRealtimeScannerService
 
         $eventCount = 0;
         foreach (($upsert['created_rows'] ?? []) as $row) {
+            if (!$this->shouldDispatchTransactionWebhook($row)) {
+                continue;
+            }
+
             $eventCount += $this->events->dispatch($userId, 'transaction.created', [
                 'account' => $this->accountPayload($freshAccount),
                 'transaction' => $this->transactionPayload($row),
             ]);
         }
         foreach (($upsert['updated_rows'] ?? []) as $row) {
+            if (!$this->shouldDispatchTransactionWebhook($row)) {
+                continue;
+            }
+
             $eventCount += $this->events->dispatch($userId, 'transaction.updated', [
                 'account' => $this->accountPayload($freshAccount),
                 'transaction' => $this->transactionPayload($row),
@@ -125,6 +134,20 @@ class BankRealtimeScannerService
             'failed' => 0,
             'events' => $eventCount,
         ];
+    }
+
+    private function shouldDispatchTransactionWebhook(array $row): bool
+    {
+        $postedAt = $row['posted_at'] ?? $row['happened_at'] ?? null;
+        if (empty($postedAt)) {
+            return false;
+        }
+
+        try {
+            return Carbon::parse((string) $postedAt)->greaterThanOrEqualTo(now()->subHours(6));
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     private function dueAccounts(string $bank, int $batch)

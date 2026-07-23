@@ -65,6 +65,21 @@ class ApiPackage
         return $plan['durations'][$months] ?? null;
     }
 
+    public static function isExpired(?User $user): bool
+    {
+        if (!$user) {
+            return true;
+        }
+
+        if ((int) ($user->role ?? 0) === 1) {
+            return false;
+        }
+
+        $fresh = self::applyDueScheduledPlan($user) ?: $user;
+
+        return (int) ($fresh->time_end ?? 0) <= time();
+    }
+
     public static function isCustomPlan(?User $user): bool
     {
         if (!$user || (int) ($user->time_end ?? 0) <= time()) {
@@ -217,6 +232,10 @@ class ApiPackage
     {
         $userId = $user instanceof User ? (int) $user->id : (int) $user;
         if ($userId <= 0) {
+            return;
+        }
+        $owner = $user instanceof User ? $user : User::find($userId);
+        if ($owner && ! self::isExpired($owner)) {
             return;
         }
 

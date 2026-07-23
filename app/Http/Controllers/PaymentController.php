@@ -5061,13 +5061,7 @@ class PaymentController extends Controller
 
     private function isApiPackageExpired(?User $user): bool
     {
-        if (!$user) {
-            return true;
-        }
-
-        $freshUser = ApiPackage::applyDueScheduledPlan($user) ?: $user;
-
-        return (int) ($freshUser->time_end ?? 0) <= time();
+        return ApiPackage::isExpired($user);
     }
 
     private function apiTokenExpiredResponse(?User $user)

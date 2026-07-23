@@ -10,6 +10,7 @@ use App\Services\AcbMobileApiClient;
 use App\Support\BankTransactionRecorder;
 use App\Support\WalletLedger;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 
 class CronController extends Controller
@@ -35,9 +36,7 @@ class CronController extends Controller
         if (!$apiAccount) {
             return "Tài khoản ACB nhận tiền đã chọn không tồn tại";
         }
-        if (!is_null($apiAccount->user_id)) {
-            return "Tài khoản ACB nhận tiền phải là tài khoản hệ thống, không thuộc user khách";
-        }
+        $apiAccount = $this->ensureSystemReceiverAccount('account_acb', $apiAccount, 'ACB', $getbank);
         if (trim((string) $apiAccount->stk) !== trim((string) $getbank->accountNumber)) {
             return "Tài khoản ACB nhận tiền không trùng STK hiển thị cho khách";
         }
@@ -83,27 +82,11 @@ class CronController extends Controller
             if($user_id){
                 $userRow = DB::table('users')->where('id',$user_id)->first();
                 if($userRow){
-                    // Check xem invoice đã tồn tại chưa
-                    $checkInv = DB::table('invoices')->where('trans_id',$tranId)->first();
-                    if(!$checkInv){
-                        // Tạo invoice
-                        DB::table('invoices')->insert([
-                            'trans_id'        => $tranId,
-                            'payment_method'  => "ACB",
-                            'user_id'         => $userRow->id,
-                            'description'     => $comment,
-                            'amount'          => $amount,
-                            'status'          => 1, // success
-                            'create_time'     => time()
-                        ]);
-
-                        $note = "Nạp tiền tự động qua ACB (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-                        $this->plusCredits($userRow->id, $amount, $note, 'recharge:acb:' . $tranId);
-
+                    if($this->recordRecharge('ACB', $userRow, $tranId, $amount, $comment)){
                         // Gửi Telegram
                         $txttele = "GIAO DỊCH NẠP TIỀN\n";
                         $txttele .= "Người dùng: {$userRow->id}\n";
-                        $txttele .= "Số Tiền: " . number_format($amount) . "\n";
+                        $txttele .= "Số Tiền: " . number_format((int) $amount) . "\n";
                         $txttele .= "Mã GD: $tranId\n";
                         $txttele .= "Nội dung: $comment\n";
                         $txttele .= "Lúc: ".date("H:i d-m-Y");
@@ -136,9 +119,7 @@ class CronController extends Controller
         if (!$apiAccount) {
             return "Tài khoản VCB nhận tiền đã chọn không tồn tại";
         }
-        if (!is_null($apiAccount->user_id)) {
-            return "Tài khoản VCB nhận tiền phải là tài khoản hệ thống, không thuộc user khách";
-        }
+        $apiAccount = $this->ensureSystemReceiverAccount('account_vietcombank', $apiAccount, 'VCB', $getbank);
         if (trim((string) $apiAccount->account) !== trim((string) $getbank->accountNumber)) {
             return "Tài khoản VCB nhận tiền không trùng STK hiển thị cho khách";
         }
@@ -174,20 +155,7 @@ class CronController extends Controller
             if($user_id){
                 $userRow = DB::table('users')->where('id',$user_id)->first();
                 if($userRow){
-                    $checkInv = DB::table('invoices')->where('trans_id',$tranId)->first();
-                    if(!$checkInv){
-                        DB::table('invoices')->insert([
-                            'trans_id'       => $tranId,
-                            'payment_method' => "VCB",
-                            'user_id'        => $userRow->id,
-                            'description'    => $comment,
-                            'amount'         => $amount,
-                            'status'         => 1,
-                            'create_time'    => time()
-                        ]);
-                        $note = "Nạp tiền tự động qua VCB (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-                        $this->plusCredits($userRow->id, $amount, $note, 'recharge:vcb:' . $tranId);
-
+                    if($this->recordRecharge('VCB', $userRow, $tranId, $amount, $comment)){
                         // Gửi Telegram
                         $txttele = "GIAO DỊCH NẠP TIỀN\n";
                         $txttele .= "Người dùng: {$userRow->id}\n";
@@ -224,9 +192,7 @@ class CronController extends Controller
         if (!$apiAccount) {
             return "Tài khoản VPBank nhận tiền đã chọn không tồn tại";
         }
-        if (!is_null($apiAccount->user_id)) {
-            return "Tài khoản VPBank nhận tiền phải là tài khoản hệ thống, không thuộc user khách";
-        }
+        $apiAccount = $this->ensureSystemReceiverAccount('account_vpbank', $apiAccount, 'VPBank', $getbank);
         if (trim((string) $apiAccount->account) !== trim((string) $getbank->accountNumber)) {
             return "Tài khoản VPBank nhận tiền không trùng STK hiển thị cho khách";
         }
@@ -285,23 +251,10 @@ class CronController extends Controller
                 continue;
             }
 
-            $checkInv = DB::table('invoices')->where('trans_id', $tranId)->first();
-            if ($checkInv) {
+            $createdInvoice = $this->recordRecharge('VPBank', $userRow, $tranId, $amount, $comment);
+            if (!$createdInvoice) {
                 continue;
             }
-
-            DB::table('invoices')->insert([
-                'trans_id' => $tranId,
-                'payment_method' => 'VPBank',
-                'user_id' => $userRow->id,
-                'description' => $comment,
-                'amount' => $amount,
-                'status' => 1,
-                'create_time' => time(),
-            ]);
-
-            $note = "Nạp tiền tự động qua VPBank (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-            $this->plusCredits($userRow->id, $amount, $note, 'recharge:vpbank:' . $tranId);
 
             $txttele = "GIAO DỊCH NẠP TIỀN\n";
             $txttele .= "Người dùng: {$userRow->id}\n";
@@ -335,9 +288,7 @@ class CronController extends Controller
         if (!$apiAccount) {
             return "Tài khoản Techcombank nhận tiền đã chọn không tồn tại";
         }
-        if (!is_null($apiAccount->user_id)) {
-            return "Tài khoản Techcombank nhận tiền phải là tài khoản hệ thống, không thuộc user khách";
-        }
+        $apiAccount = $this->ensureSystemReceiverAccount('account_techcombank', $apiAccount, 'Techcombank', $getbank);
         if (trim((string) $apiAccount->account) !== trim((string) $getbank->accountNumber)) {
             return "Tài khoản Techcombank nhận tiền không trùng STK hiển thị cho khách";
         }
@@ -393,23 +344,10 @@ class CronController extends Controller
                 continue;
             }
 
-            $checkInv = DB::table('invoices')->where('trans_id', $tranId)->first();
-            if ($checkInv) {
+            $createdInvoice = $this->recordRecharge('Techcombank', $userRow, $tranId, $amount, $comment);
+            if (!$createdInvoice) {
                 continue;
             }
-
-            DB::table('invoices')->insert([
-                'trans_id' => $tranId,
-                'payment_method' => 'Techcombank',
-                'user_id' => $userRow->id,
-                'description' => $comment,
-                'amount' => $amount,
-                'status' => 1,
-                'create_time' => time(),
-            ]);
-
-            $note = "Nạp tiền tự động qua Techcombank (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-            $this->plusCredits($userRow->id, $amount, $note, 'recharge:techcombank:' . $tranId);
 
             $txttele = "GIAO DỊCH NẠP TIỀN\n";
             $txttele .= "Người dùng: {$userRow->id}\n";
@@ -479,9 +417,7 @@ class CronController extends Controller
         if (!$apiAccount) {
             return "Tài khoản MBBank nhận tiền đã chọn không tồn tại";
         }
-        if (!is_null($apiAccount->user_id)) {
-            return "Tài khoản MBBank nhận tiền phải là tài khoản hệ thống, không thuộc user khách";
-        }
+        $apiAccount = $this->ensureSystemReceiverAccount('account_mbbank', $apiAccount, 'MBBank', $getbank);
         if (trim((string) $apiAccount->account) !== trim((string) $getbank->accountNumber)) {
             return "Tài khoản MBBank nhận tiền không trùng STK hiển thị cho khách";
         }
@@ -537,23 +473,10 @@ class CronController extends Controller
                 continue;
             }
 
-            $checkInv = DB::table('invoices')->where('trans_id', $tranId)->first();
-            if ($checkInv) {
+            $createdInvoice = $this->recordRecharge('MBBank', $userRow, $tranId, $amount, $comment);
+            if (!$createdInvoice) {
                 continue;
             }
-
-            DB::table('invoices')->insert([
-                'trans_id' => $tranId,
-                'payment_method' => 'MBBank',
-                'user_id' => $userRow->id,
-                'description' => $comment,
-                'amount' => $amount,
-                'status' => 1,
-                'create_time' => time(),
-            ]);
-
-            $note = "Nạp tiền tự động qua MBBank (#$tranId *Nội dung: $comment *Số tiền: $amount)";
-            $this->plusCredits($userRow->id, $amount, $note, 'recharge:mbbank:' . $tranId);
 
             $txttele = "GIAO DỊCH NẠP TIỀN\n";
             $txttele .= "Người dùng: {$userRow->id}\n";
@@ -575,6 +498,131 @@ class CronController extends Controller
         } catch (\Throwable $e) {
             report($e);
         }
+    }
+
+    private function ensureSystemReceiverAccount(string $table, $apiAccount, string $bankLabel, $bank = null)
+    {
+        if (!$apiAccount || is_null($apiAccount->user_id)) {
+            return $apiAccount;
+        }
+
+        $systemAccount = $this->cloneSystemReceiverAccount($table, $apiAccount);
+        if (!$systemAccount) {
+            return $apiAccount;
+        }
+
+        if ($bank && isset($bank->id)) {
+            DB::table('bank')->where('id', (int) $bank->id)->update([
+                'receiver_account_id' => (int) $systemAccount->id,
+            ]);
+            $bank->receiver_account_id = (int) $systemAccount->id;
+        }
+
+        DB::table('xlogs')->insert([
+            'ip' => request()->ip(),
+            'user' => 0,
+            'log' => 'Tự tạo account nhận nạp hệ thống từ token user',
+            'notes' => $bankLabel . ' user #' . (int) $apiAccount->id . ' user_id=' . (int) $apiAccount->user_id . ' -> system #' . (int) $systemAccount->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $systemAccount;
+    }
+
+    private function cloneSystemReceiverAccount(string $table, $source)
+    {
+        $accountColumn = $this->receiverAccountNumberColumn($table);
+        $accountNumber = $this->receiverAccountNumberForTable($table, $source);
+        $systemAccount = null;
+
+        if (!empty($source->token)) {
+            $systemAccount = DB::table($table)
+                ->whereNull('user_id')
+                ->where('token', (string) $source->token)
+                ->first();
+        }
+
+        if (!$systemAccount && $accountNumber !== '' && $accountColumn && Schema::hasColumn($table, $accountColumn)) {
+            $systemAccount = DB::table($table)
+                ->whereNull('user_id')
+                ->where($accountColumn, $accountNumber)
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        $payload = (array) $source;
+        unset($payload['id']);
+        $payload['user_id'] = null;
+
+        foreach ([
+            'is_deleted' => 0,
+            'deleted_at' => null,
+            'is_active' => 1,
+            'stopped_at' => null,
+            'status_note' => null,
+        ] as $column => $value) {
+            if (Schema::hasColumn($table, $column)) {
+                $payload[$column] = $value;
+            } else {
+                unset($payload[$column]);
+            }
+        }
+
+        if (Schema::hasColumn($table, 'time')) {
+            $payload['time'] = time();
+        }
+
+        if ($systemAccount) {
+            DB::table($table)->where('id', (int) $systemAccount->id)->update($payload);
+            $systemId = (int) $systemAccount->id;
+        } else {
+            $systemId = (int) DB::table($table)->insertGetId($payload);
+        }
+
+        return DB::table($table)->where('id', $systemId)->first();
+    }
+
+    private function receiverAccountNumberColumn(string $table): ?string
+    {
+        return $table === 'account_acb' ? 'stk' : 'account';
+    }
+
+    private function receiverAccountNumberForTable(string $table, $account): string
+    {
+        $column = $this->receiverAccountNumberColumn($table);
+
+        return $column ? trim((string) ($account->{$column} ?? '')) : '';
+    }
+
+    private function recordRecharge(string $method, $userRow, string $tranId, $amount, string $comment): bool
+    {
+        $amount = (int) preg_replace('/[^\d]/', '', (string) $amount);
+        if (!$userRow || $amount <= 0 || trim($tranId) === '') {
+            return false;
+        }
+
+        $checkInv = DB::table('invoices')->where('trans_id', $tranId)->first();
+        $created = false;
+
+        if (!$checkInv) {
+            DB::table('invoices')->insert([
+                'trans_id' => $tranId,
+                'payment_method' => $method,
+                'user_id' => $userRow->id,
+                'description' => $comment,
+                'amount' => $amount,
+                'status' => 1,
+                'create_time' => time(),
+            ]);
+            $created = true;
+        }
+
+        $reference = 'recharge:' . strtolower($method) . ':' . $tranId;
+        $note = "Nạp tiền tự động qua {$method} (#{$tranId} *Nội dung: {$comment} *Số tiền: {$amount})";
+        $this->plusCredits($userRow->id, $amount, $note, $reference, $created);
+
+        return $created;
     }
 
     // -------------------------------------------------------
@@ -685,30 +733,39 @@ class CronController extends Controller
         return $default;
     }
 
-    private function plusCredits($user_id, $amount, $reason, ?string $reference = null)
+    private function plusCredits($user_id, $amount, $reason, ?string $reference = null, bool $countTotalPaid = true)
     {
-        DB::transaction(function () use ($user_id, $amount, $reason, $reference) {
+        DB::transaction(function () use ($user_id, $amount, $reason, $reference, $countTotalPaid) {
             $user = DB::table('users')->where('id', $user_id)->lockForUpdate()->first();
             if (!$user) {
                 return;
             }
 
             $amount = (int) $amount;
+            $reference = $reference ?: WalletLedger::makeReference('recharge_credit', (int) $user_id);
+            if ($reference && WalletLedger::available() && DB::table('wallet_ledgers')->where('reference', $reference)->exists()) {
+                return;
+            }
+
             $before = (int) ($user->amount ?? 0);
             $after = $before + $amount;
 
             WalletLedger::ensureOpeningBalance((int) $user_id, $before);
 
-            DB::table('users')->where('id', $user_id)->update([
+            $userUpdate = [
                 'amount' => $after,
-                'total_paid' => DB::raw('COALESCE(total_paid, 0) + ' . max(0, $amount)),
-            ]);
+            ];
+            if ($countTotalPaid) {
+                $userUpdate['total_paid'] = DB::raw('COALESCE(total_paid, 0) + ' . max(0, $amount));
+            }
+
+            DB::table('users')->where('id', $user_id)->update($userUpdate);
 
             WalletLedger::record(
                 (int) $user_id,
                 $amount,
                 'recharge_credit',
-                $reference ?: WalletLedger::makeReference('recharge_credit', (int) $user_id),
+                $reference,
                 $reason,
                 null,
                 $before,

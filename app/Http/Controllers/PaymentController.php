@@ -58,6 +58,144 @@ class PaymentController extends Controller
         return "Gói hiện tại cho phép tối đa {$accountLimit} tài khoản ngân hàng";
     }
 
+    private function normaliseBankAccountNo($value): string
+    {
+        return preg_replace('/\s+/', '', trim((string) $value)) ?: '';
+    }
+
+    private function acbAccountsFromBalance(string $accessToken, string $fallbackStk, string $fallbackName): array
+    {
+        $accounts = [];
+        $balanceArr = json_decode($this->getBalanceAcb($accessToken), true);
+
+        foreach ((array) ($balanceArr['data'] ?? []) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $number = $this->normaliseBankAccountNo($item['accountNumber'] ?? $item['accountNo'] ?? $item['account'] ?? '');
+            if ($number === '') {
+                continue;
+            }
+
+            $accounts[$number] = [
+                'number' => $number,
+                'name' => trim((string) ($item['accountDescription'] ?? $item['accountName'] ?? $fallbackName)),
+            ];
+        }
+
+        $fallbackNumber = $this->normaliseBankAccountNo($fallbackStk);
+        if ($fallbackNumber !== '' && !isset($accounts[$fallbackNumber])) {
+            $accounts[$fallbackNumber] = [
+                'number' => $fallbackNumber,
+                'name' => $fallbackName,
+            ];
+        }
+
+        return array_values($accounts);
+    }
+
+    private function syncAcbLoginAccounts(?int $ownerId, string $phone, string $password, string $accessToken, string $sharedToken, string $fallbackStk, string $fallbackName): int
+    {
+        $synced = 0;
+
+        foreach ($this->acbAccountsFromBalance($accessToken, $fallbackStk, $fallbackName) as $accountInfo) {
+            $number = $this->normaliseBankAccountNo($accountInfo['number'] ?? '');
+            if ($number === '') {
+                continue;
+            }
+
+            $existing = AccountAcb::where('user_id', $ownerId)->where('stk', $number)->first();
+            AccountAcb::updateOrCreate(
+                [
+                    'user_id' => $ownerId,
+                    'stk' => $number,
+                ],
+                [
+                    'phone' => $phone,
+                    'password' => $password,
+                    'name' => trim((string) ($accountInfo['name'] ?? '')) ?: $fallbackName,
+                    'sessionId' => $accessToken,
+                    'deviceId' => '',
+                    'token' => $existing->token ?? $sharedToken,
+                    'time' => time(),
+                ]
+            );
+
+            $synced++;
+        }
+
+        return $synced;
+    }
+
+    private function syncVpbankLoginAccounts(AccountVpbank $source, ?int $ownerId, string $username, string $password): int
+    {
+        $list = $this->vpbankListAccounts($source);
+        if (empty($list['success'])) {
+            return 0;
+        }
+
+        $synced = 0;
+        foreach ((array) ($list['accounts'] ?? []) as $accountInfo) {
+            if (!is_array($accountInfo)) {
+                continue;
+            }
+
+            $number = $this->normaliseBankAccountNo($this->vpbankArrayValue($accountInfo, ['Number', 'AccountNumber'], ''));
+            if ($number === '') {
+                continue;
+            }
+
+            $existing = AccountVpbank::where('user_id', $ownerId)->where('account', $number)->first();
+            AccountVpbank::updateOrCreate(
+                [
+                    'user_id' => $ownerId,
+                    'account' => $number,
+                ],
+                [
+                    'username' => $username,
+                    'password' => $password,
+                    'name' => $this->vpbankNameFromAccount($accountInfo) ?: ($existing->name ?? $source->name),
+                    'token_key' => (string) $source->token_key,
+                    'csrf' => (string) $source->csrf,
+                    'cookie' => (string) $source->cookie,
+                    'is_login' => (bool) $source->is_login,
+                    'token' => $existing->token ?? $source->token ?? md5(uniqid() . time()),
+                    'create_date' => now(),
+                ]
+            );
+
+            $synced++;
+        }
+
+        return $synced;
+    }
+
+    private function mbbankAccountsFromBalanceData(array $data): array
+    {
+        $accounts = [];
+        $items = array_merge((array) ($data['acct_list'] ?? []), (array) ($data['internationalAcctList'] ?? []));
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $number = $this->normaliseBankAccountNo($item['acctNo'] ?? '');
+            if ($number === '') {
+                continue;
+            }
+
+            $accounts[$number] = [
+                'number' => $number,
+                'name' => (string) ($item['acctNm'] ?? ''),
+                'balance' => (int) str_replace([',', '.00'], '', (string) ($item['currentBalance'] ?? 0)),
+            ];
+        }
+
+        return array_values($accounts);
+    }
+
     private function bankHistoryPartyNameFilter(Request $request): string
     {
         $name = trim((string) $request->query('party_name', ''));
@@ -631,7 +769,8 @@ class PaymentController extends Controller
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
         $ownerId = $isSystemReceiver ? null : (int) $user->id;
         $accountLimit = ApiPackage::userLimit($user);
-        $existingVcb = AccountVietcombank::where('user_id', $ownerId)->where('username', $account)->first();
+        $existingVcb = AccountVietcombank::where('user_id', $ownerId)->where('account', $stk)->first()
+            ?: AccountVietcombank::where('user_id', $ownerId)->where('username', $account)->first();
         $exists = (bool) $existingVcb;
         if (!$isSystemReceiver && !$exists && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
             return response()->json([
@@ -672,11 +811,11 @@ class PaymentController extends Controller
             AccountVietcombank::updateOrCreate(
                 [
                     'user_id'  => $ownerId,
-                    'username' => $account,
+                    'account'  => $stk,
                 ],
                 [
+                    'username'    => $account,
                     'password'    => $password,
-                    'account'     => $stk,
                     'session_id'  => $login['sessionId'] ?? '',
                     'access_key'  => $login['accessKey'] ?? '',
                     'client_id'   => $login['userInfo']['clientId'] ?? '',
@@ -730,11 +869,11 @@ class PaymentController extends Controller
             AccountVietcombank::updateOrCreate(
                 [
                     'user_id'  => $ownerId,
-                    'username' => $account,
+                    'account'  => $stk,
                 ],
                 [
+                    'username'     => $account,
                     'password'     => $password,
-                    'account'      => $stk,
                     'tranId'       => $tranId,
                     'browserToken' => $browserToken,
                     'token'        => $tokenGenerated,
@@ -776,8 +915,15 @@ class PaymentController extends Controller
         $ownerId = $isSystemReceiver ? null : (int) $user->id;
 
         $data = AccountVietcombank::where('user_id', $ownerId)
-                ->where('username', $account)
+                ->where('account', $stk)
                 ->first();
+        if (!$data) {
+            $data = AccountVietcombank::where('user_id', $ownerId)
+                ->where('username', $account)
+                ->whereNotNull('tranId')
+                ->orderByDesc('create_date')
+                ->first();
+        }
         if (!$data) {
             return response()->json(['status'=>'1','msg'=>'Không tìm thấy tài khoản']);
         }
@@ -1447,7 +1593,8 @@ class PaymentController extends Controller
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
         $ownerId = $isSystemReceiver ? null : (int) $user->id;
         $accountLimit = ApiPackage::userLimit($user);
-        $existingVpbank = AccountVpbank::where('user_id', $ownerId)->where('username', $account)->first();
+        $existingVpbank = AccountVpbank::where('user_id', $ownerId)->where('account', $stk)->first()
+            ?: AccountVpbank::where('user_id', $ownerId)->where('username', $account)->first();
         if (!$isSystemReceiver && !$existingVpbank && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
             return response()->json([
                 'status' => '1',
@@ -1466,11 +1613,11 @@ class PaymentController extends Controller
         $acc = AccountVpbank::updateOrCreate(
             [
                 'user_id' => $ownerId,
-                'username' => $account,
+                'account' => $stk,
             ],
             [
+                'username' => $account,
                 'password' => $password,
-                'account' => $stk,
                 'name' => $existingVpbank->name ?? null,
                 'token_key' => (string) ($login['token_key'] ?? ''),
                 'csrf' => (string) ($login['csrf'] ?? ''),
@@ -1487,6 +1634,8 @@ class PaymentController extends Controller
                 'msg' => (string) ($login['message'] ?? 'VPBank yêu cầu OTP từ điện thoại')
             ]);
         }
+
+        $this->syncVpbankLoginAccounts($acc->refresh(), $ownerId, (string) $account, (string) $password);
 
         $name = $this->vpbankAccountName($acc->refresh());
         if ($name !== '') {
@@ -1514,7 +1663,14 @@ class PaymentController extends Controller
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
         $ownerId = $isSystemReceiver ? null : (int) $user->id;
 
-        $acc = AccountVpbank::where('user_id', $ownerId)->where('username', $account)->first();
+        $acc = AccountVpbank::where('user_id', $ownerId)
+            ->where('username', $account)
+            ->where('is_login', false)
+            ->orderByDesc('create_date')
+            ->first();
+        if (!$acc) {
+            $acc = AccountVpbank::where('user_id', $ownerId)->where('username', $account)->orderByDesc('create_date')->first();
+        }
         if (!$acc) {
             return response()->json(['status' => '1', 'msg' => 'Không tìm thấy phiên VPBank đang chờ OTP']);
         }
@@ -1533,6 +1689,7 @@ class PaymentController extends Controller
             $acc->name = $name;
         }
         $acc->save();
+        $this->syncVpbankLoginAccounts($acc->refresh(), $ownerId, (string) $account, (string) $acc->password);
 
         return response()->json(['status' => '2', 'msg' => 'Thêm VPBank thành công']);
     }
@@ -2618,22 +2775,36 @@ class PaymentController extends Controller
             return response()->json(['status' => '1', 'msg' => 'Không tìm thấy số tài khoản MBBank này']);
         }
 
-        AccountMbbank::updateOrCreate(
-            [
-                'user_id' => $ownerId,
-                'account' => $stk,
-            ],
-            [
-                'username' => $account,
-                'password' => $password,
-                'name' => (string) ($accountInfo['name'] ?? ($existing->name ?? '')),
-                'session_id' => $sessionId,
-                'device_id' => $deviceId,
-                'token' => $existing->token ?? md5(uniqid('', true) . time()),
-                'balance' => (int) ($accountInfo['balance'] ?? 0),
-                'create_date' => now(),
-            ]
-        );
+        $sharedToken = $existing->token ?? md5(uniqid('', true) . time());
+        $bankAccounts = $this->mbbankAccountsFromBalanceData($balance['data'] ?? []);
+        if (!$bankAccounts) {
+            $bankAccounts = [$accountInfo];
+        }
+
+        foreach ($bankAccounts as $bankAccount) {
+            $number = $this->normaliseBankAccountNo($bankAccount['number'] ?? '');
+            if ($number === '') {
+                continue;
+            }
+
+            $existingAccount = AccountMbbank::where('user_id', $ownerId)->where('account', $number)->first();
+            AccountMbbank::updateOrCreate(
+                [
+                    'user_id' => $ownerId,
+                    'account' => $number,
+                ],
+                [
+                    'username' => $account,
+                    'password' => $password,
+                    'name' => (string) ($bankAccount['name'] ?? ($existingAccount->name ?? '')),
+                    'session_id' => $sessionId,
+                    'device_id' => $deviceId,
+                    'token' => $existingAccount->token ?? $sharedToken,
+                    'balance' => (int) ($bankAccount['balance'] ?? 0),
+                    'create_date' => now(),
+                ]
+            );
+        }
 
         return response()->json(['status' => '2', 'msg' => 'Thêm MBBank thành công']);
     }
@@ -3277,8 +3448,8 @@ class PaymentController extends Controller
         $password = (string) $request->input('password', '');
         $stk = trim((string) $request->input('stk'));
 
-        if ($account === '' || $stk === '') {
-            return response()->json(['status' => '1', 'msg' => 'Vui lòng nhập đủ tài khoản đăng nhập và số tài khoản Techcombank']);
+        if ($account === '' || $password === '' || $stk === '') {
+            return response()->json(['status' => '1', 'msg' => 'Vui lòng nhập đủ tài khoản đăng nhập, mật khẩu và số tài khoản Techcombank']);
         }
 
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
@@ -3292,7 +3463,7 @@ class PaymentController extends Controller
             ]);
         }
 
-        $login = $this->techcombankManualLoginRequest();
+        $login = $this->techcombankLoginRequest($account, $password);
         if (empty($login['success'])) {
             return response()->json([
                 'status' => '1',
@@ -3312,8 +3483,8 @@ class PaymentController extends Controller
                 'auth_token' => null,
                 'refresh_token' => null,
                 'arrangement_id' => null,
-                'cookie' => '',
-                'login_url' => (string) ($login['auth_url'] ?? ''),
+                'cookie' => (string) ($login['cookie'] ?? ''),
+                'login_url' => (string) ($login['login_url'] ?? ''),
                 'code_verifier' => (string) ($login['code_verifier'] ?? ''),
                 'code_challenge' => (string) ($login['code_challenge'] ?? ''),
                 'state' => (string) ($login['state'] ?? ''),
@@ -3327,9 +3498,8 @@ class PaymentController extends Controller
 
         return response()->json([
             'status' => '2',
-            'msg' => 'Đã tạo link đăng nhập Techcombank. Hãy mở link, đăng nhập và duyệt trên app Mobile, sau đó dán URL sau xác nhận về hệ thống.',
-            'manual_login' => true,
-            'auth_url' => (string) ($login['auth_url'] ?? ''),
+            'msg' => 'Techcombank đã gửi yêu cầu xác nhận tới app Mobile. Hãy mở app, duyệt đăng nhập rồi bấm hoàn tất.',
+            'manual_login' => false,
         ]);
     }
 
@@ -4464,7 +4634,8 @@ class PaymentController extends Controller
         $isSystemReceiver = $request->boolean('system_receiver') && (int) ($user->role ?? 0) === 1;
         $ownerId = $isSystemReceiver ? null : (int) $user->id;
         $accountLimit = ApiPackage::userLimit($user);
-        $existingAcb = AccountAcb::where('user_id', $ownerId)->where('phone', $account)->first();
+        $existingAcb = AccountAcb::where('user_id', $ownerId)->where('stk', $stk)->first()
+            ?: AccountAcb::where('user_id', $ownerId)->where('phone', $account)->first();
         $exists = (bool) $existingAcb;
         if (!$isSystemReceiver && !$exists && $accountLimit > 0 && $this->userBankAccountCount((int) $user->id) >= $accountLimit) {
             return response()->json([
@@ -4483,22 +4654,9 @@ class PaymentController extends Controller
         if (isset($login['identity']['active']) && $login['identity']['active'] == 1) {
             $accessToken = $login['accessToken'] ?? '';
             $displayName = $login['identity']['displayName'] ?? 'ACB NAME';
+            $sharedToken = $existingAcb->token ?? md5(uniqid().time());
 
-            AccountAcb::updateOrCreate(
-                [
-                    'user_id' => $ownerId,
-                    'phone'   => $account,
-                ],
-                [
-                    'password'  => $password,
-                    'stk'       => $stk,
-                    'name'      => $displayName,
-                    'sessionId' => $accessToken,
-                    'deviceId'  => '',
-                    'token'     => $existingAcb->token ?? md5(uniqid().time()),
-                    'time'      => time(),
-                ]
-            );
+            $this->syncAcbLoginAccounts($ownerId, (string) $account, (string) $password, (string) $accessToken, $sharedToken, (string) $stk, (string) $displayName);
 
             return response()->json(['status'=>'2','msg'=>'Thêm ACB thành công']);
         } else {
@@ -4934,13 +5092,11 @@ class PaymentController extends Controller
     {
         return app(AcbMobileApiClient::class)->login((string) $username, (string) $password);
     }
-
     private function getBalanceAcb($token)
     {
         return app(AcbMobileApiClient::class)->balance((string) $token);
     }
-
-    private function getTransactionHistoryAcb($accountNo, $token, $rows = 20)
+    private function getTransactionHistoryAcb($accountNo, $token, $rows=20)
     {
         return app(AcbMobileApiClient::class)->transactions(
             (string) $accountNo,
@@ -4948,7 +5104,6 @@ class PaymentController extends Controller
             (int) $rows
         );
     }
-
     private function acbReLoginIfNeed(AccountAcb $acc)
     {
         try {

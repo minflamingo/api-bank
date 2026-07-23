@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class PayinController extends Controller
 {
@@ -2110,9 +2111,81 @@ class PayinController extends Controller
 
     private function receiverAccountByToken(string $type, string $token)
     {
-        return DB::table($this->receiverAccountTable($type))
+        $table = $this->receiverAccountTable($type);
+        $systemAccount = DB::table($table)
+            ->whereNull('user_id')
             ->where('token', $token)
             ->first();
+        if ($systemAccount) {
+            return $systemAccount;
+        }
+
+        $account = DB::table($table)
+            ->where('token', $token)
+            ->first();
+
+        if (!$account || is_null($account->user_id)) {
+            return $account;
+        }
+
+        return $this->cloneReceiverAccountForSystem($type, $table, $account);
+    }
+
+    private function cloneReceiverAccountForSystem(string $type, string $table, $source)
+    {
+        $accountNumber = $this->receiverAccountNumber($type, $source);
+        $accountColumn = $type === 'ACB' ? 'stk' : 'account';
+        $systemAccount = null;
+
+        if ($accountNumber !== '' && Schema::hasColumn($table, $accountColumn)) {
+            $systemAccount = DB::table($table)
+                ->whereNull('user_id')
+                ->where($accountColumn, $accountNumber)
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        $payload = (array) $source;
+        unset($payload['id']);
+        $payload['user_id'] = null;
+
+        foreach ([
+            'is_deleted' => 0,
+            'deleted_at' => null,
+            'is_active' => 1,
+            'stopped_at' => null,
+            'status_note' => null,
+        ] as $column => $value) {
+            if (Schema::hasColumn($table, $column)) {
+                $payload[$column] = $value;
+            } else {
+                unset($payload[$column]);
+            }
+        }
+
+        if (Schema::hasColumn($table, 'time')) {
+            $payload['time'] = time();
+        }
+
+        if ($systemAccount) {
+            DB::table($table)->where('id', (int) $systemAccount->id)->update($payload);
+            $systemId = (int) $systemAccount->id;
+            $action = 'Cập nhật account hệ thống từ token user';
+        } else {
+            $systemId = (int) DB::table($table)->insertGetId($payload);
+            $action = 'Tạo account hệ thống từ token user';
+        }
+
+        DB::table('xlogs')->insert([
+            'ip' => request()->ip(),
+            'user' => Auth::id(),
+            'log' => $action,
+            'notes' => $type . ' user #' . (int) $source->id . ' user_id=' . (int) $source->user_id . ' -> system #' . $systemId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return DB::table($table)->where('id', $systemId)->first();
     }
 
     private function receiverAccountNumber(string $type, $account): string
